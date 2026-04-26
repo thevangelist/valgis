@@ -10,7 +10,7 @@ Decorrelation stretch is a PCA-based algorithm originally developed for satellit
 
 ## Tools
 
-- **Field Camera**: Open on a phone, point at a rock panel. Decorrelated image updates live at up to 20 fps. Tap to capture a full-resolution PNG.
+- **Field Camera**: Open on a phone, point at a rock panel. Decorrelated image updates live. Tap to capture a full-resolution PNG.
 - **Desktop Studio**: Load TIFF, HEIC, RAW, or JPEG. Apply spectral filters, then refine with shadow/highlight recovery, dehaze, clarity, noise reduction, and sharpening.
 
 ## Filters
