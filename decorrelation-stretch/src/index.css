@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+@layer base {
+  :root {
+    /* Dark theme always — matches the app's gray-900 bg */
+    --background: #1f2937;
+    --foreground: #f9fafb;
+    --card: #374151;
+    --card-foreground: #f9fafb;
+    --popover: #374151;
+    --popover-foreground: #f9fafb;
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    --secondary: #4b5563;
+    --secondary-foreground: #f9fafb;
+    --muted: #374151;
+    --muted-foreground: #9ca3af;
+    --accent: #4b5563;
+    --accent-foreground: #f9fafb;
+    --destructive: #ef4444;
+    --border: #4b5563;
+    --input: #374151;
+    --ring: #3b82f6;
+    --radius: 0.5rem;
+  }
+}
