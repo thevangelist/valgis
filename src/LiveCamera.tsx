@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { X, RotateCcw, Share2, Download } from 'lucide-react';
+import { X, RotateCcw, Share2, Download, SlidersHorizontal } from 'lucide-react';
 import { useLiveCamera } from './hooks/useLiveCamera';
 import type { ProcessOptions } from './worker/imageProcessor';
 
@@ -27,16 +27,35 @@ const BASE_OPTS: ProcessOptions = {
 // ─── Save helper ──────────────────────────────────────────────────────────────
 
 async function saveImage(blob: Blob, filename: string) {
-  // Web Share API → native share sheet → "Save Image" on iOS / Android
   const file = new File([blob], filename, { type: 'image/jpeg' });
   if (navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file] }); return; } catch { /* cancelled or unsupported */ }
   }
-  // Fallback: download
   const url = URL.createObjectURL(blob);
   const a   = Object.assign(document.createElement('a'), { href: url, download: filename });
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// ─── Compact slider ───────────────────────────────────────────────────────────
+
+function QuickSlider({
+  label, value, min, max, onChange,
+}: {
+  label: string; value: number; min: number; max: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-white/50 text-[10px] w-6 shrink-0 text-right">{label}</span>
+      <input
+        type="range" min={min} max={max} value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        className="flex-1 h-1 appearance-none rounded-full bg-white/20 accent-white cursor-pointer"
+      />
+      <span className="text-white/40 text-[10px] w-6 tabular-nums">{value}</span>
+    </div>
+  );
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -45,32 +64,28 @@ type Mode = 'live' | 'preview';
 
 export default function LiveCamera({ onBack }: { onBack: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [filter, setFilter]       = useState<LiveFilter>('none');
-  const [mode, setMode]           = useState<Mode>('live');
-  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
-  const [previewUrl, setPreviewUrl]   = useState<string | null>(null);
-  const [saving, setSaving]           = useState(false);
+  const [filter, setFilter]             = useState<LiveFilter>('none');
+  const [mode, setMode]                 = useState<Mode>('live');
+  const [previewBlob, setPreviewBlob]   = useState<Blob | null>(null);
+  const [previewUrl, setPreviewUrl]     = useState<string | null>(null);
+  const [saving, setSaving]             = useState(false);
+  const [showSliders, setShowSliders]   = useState(false);
+  const [brightness, setBrightness]     = useState(100);
+  const [contrast, setContrast]         = useState(100);
+  const [saturation, setSaturation]     = useState(100);
 
   const { state, error, fps, start, stop, pause, resume, setOptions, captureHighRes } =
     useLiveCamera(canvasRef);
 
-  // Start camera on mount
-  useEffect(() => {
-    start();
-    return () => stop();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { start(); return () => stop(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Propagate filter change to worker (chip highlights immediately)
   useEffect(() => {
-    setOptions({ ...BASE_OPTS, filter });
-  }, [filter, setOptions]);
+    setOptions({ ...BASE_OPTS, filter, brightness, contrast, saturation });
+  }, [filter, brightness, contrast, saturation, setOptions]);
 
-  // Clean up object URL when leaving preview
   useEffect(() => {
     return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
   }, [previewUrl]);
-
-  // ── Capture ────────────────────────────────────────────────────────────────
 
   const handleShutter = useCallback(async () => {
     if (state !== 'running') return;
@@ -98,48 +113,37 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
     handleDismiss();
   }, [previewBlob, filter, handleDismiss]);
 
-  // ── Shared safe-area style helpers ─────────────────────────────────────────
-
   const safeTop    = { paddingTop:    'max(16px, env(safe-area-inset-top))' };
   const safeBottom = { paddingBottom: 'max(16px, env(safe-area-inset-bottom))' };
 
-  // ─────────────────────────────────────────────────────────────────────────
+  const hasAdjustments = brightness !== 100 || contrast !== 100 || saturation !== 100;
+
   return (
-    // Root: covers the entire visual viewport, no flex layout eating space
     <div
       className="fixed inset-0 bg-black overflow-hidden select-none touch-none"
       style={{ WebkitTapHighlightColor: 'transparent' }}
     >
-      {/* ── Viewfinder canvas ─────────────────────────────────────────────
-          Pixel dimensions are set by the hook to match screen AR at ~720p.
-          CSS stretches it to fill 100 % × 100 % with zero letterboxing.    */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full"
         style={{ imageRendering: 'auto' }}
       />
 
-      {/* Idle / loading */}
       {state === 'idle' && !error && (
         <div className="absolute inset-0 flex items-center justify-center text-white/30 text-sm pointer-events-none">
           Starting camera…
         </div>
       )}
 
-      {/* Error state */}
       {error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-center">
           <p className="text-red-400 text-sm leading-relaxed">{error}</p>
-          <button
-            onClick={start}
-            className="bg-white/10 text-white text-sm px-5 py-2 rounded-full"
-          >
+          <button onClick={start} className="bg-white/10 text-white text-sm px-5 py-2 rounded-full">
             Try again
           </button>
         </div>
       )}
 
-      {/* ── Live mode controls ─────────────────────────────────────────── */}
       {mode === 'live' && (
         <>
           {/* Top row */}
@@ -169,13 +173,18 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
             </div>
           </div>
 
-          {/* Bottom controls — overlaid on canvas */}
-          <div
-            className="absolute bottom-0 inset-x-0"
-            style={safeBottom}
-          >
-            {/* Gradient scrim so controls are legible on any scene */}
+          {/* Bottom controls */}
+          <div className="absolute bottom-0 inset-x-0" style={safeBottom}>
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
+
+            {/* Quick adjust sliders */}
+            {showSliders && (
+              <div className="relative px-5 pb-2 pt-3 space-y-2">
+                <QuickSlider label="B" value={brightness} min={50} max={150} onChange={setBrightness} />
+                <QuickSlider label="C" value={contrast}   min={50} max={150} onChange={setContrast} />
+                <QuickSlider label="S" value={saturation} min={0}  max={200} onChange={setSaturation} />
+              </div>
+            )}
 
             {/* Filter chips */}
             <div
@@ -199,6 +208,18 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
 
             {/* Shutter row */}
             <div className="relative flex items-center justify-center py-3">
+              {/* Sliders toggle — left of shutter */}
+              <button
+                onClick={() => setShowSliders(v => !v)}
+                className={`absolute left-8 p-2 rounded-full backdrop-blur-sm transition-colors ${
+                  showSliders || hasAdjustments
+                    ? 'bg-white/20 text-white'
+                    : 'bg-black/40 text-white/50'
+                }`}
+              >
+                <SlidersHorizontal className="w-5 h-5" />
+              </button>
+
               <button
                 onClick={handleShutter}
                 disabled={state !== 'running'}
@@ -211,10 +232,8 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
         </>
       )}
 
-      {/* ── Preview mode ───────────────────────────────────────────────── */}
       {mode === 'preview' && previewUrl && (
         <>
-          {/* Full-screen still image */}
           <img
             src={previewUrl}
             className="absolute inset-0 w-full h-full"
@@ -222,7 +241,6 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
             alt="Captured frame"
           />
 
-          {/* Top: dismiss */}
           <div
             className="absolute top-0 inset-x-0 flex items-center justify-between px-4"
             style={safeTop}
@@ -238,7 +256,6 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
             </span>
           </div>
 
-          {/* Bottom: Dismiss + Save */}
           <div
             className="absolute bottom-0 inset-x-0 flex items-center justify-between px-6 py-4"
             style={safeBottom}
@@ -259,7 +276,7 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
               className="flex flex-col items-center gap-1 text-white active:opacity-70 disabled:opacity-40"
             >
               <div className="bg-white rounded-full p-3">
-                {navigator.canShare ? (
+                {navigator.canShare != null ? (
                   <Share2 className="w-6 h-6 text-black" />
                 ) : (
                   <Download className="w-6 h-6 text-black" />
