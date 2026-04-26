@@ -532,7 +532,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 </div>
                 <Select value={lightingPreset} onValueChange={v => v && applyLightingPreset(v)}>
                   <SelectTrigger className="w-full bg-gray-700 border-gray-600 text-gray-200 text-xs h-8">
-                    <SelectValue />
+                    <SelectValue>{lightingPresets[lightingPreset as keyof typeof lightingPresets].name}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {Object.entries(lightingPresets).map(([k, p]) => (
