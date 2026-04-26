@@ -22,7 +22,7 @@ Come back from the site with a folder of DSLR shots. Load them one by one, work 
 
 <img src="brand/github-mobile-camera.png" alt="Valgis field camera" width="260" />
 
-A live camera view for on-site scanning. Open on your phone, point at a panel, and the decorrelated image shows in real time. Tap through the filter strip at the bottom. When you see pigment come up, tap to capture. Saves a full-resolution PNG to your camera roll, processed fresh at the camera's native resolution.
+A real-time camera view for on-site scanning. Open on your phone, point at a panel, and the decorrelated image updates live as you move. Tap through the filter strip at the bottom. When you see pigment come up, tap to capture. Saves a full-resolution PNG to your camera roll, processed fresh at the camera's native resolution.
 
 Use it to scan quickly across a panel before you commit the DSLR. It tells you where to shoot and which filter to follow up with at home.
 
