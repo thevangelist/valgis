@@ -442,12 +442,16 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
             <button onClick={() => setSidebarOpen(o => !o)} className="md:hidden bg-gray-800 hover:bg-gray-700 border border-gray-700 p-2 rounded-md">
               {sidebarOpen ? <X size={20}/> : <Menu size={20}/>}
             </button>
-            <div>
+            <button
+              onClick={onBack}
+              className="flex items-center"
+              aria-label="Back to home"
+            >
               <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Valgis" className="h-7 md:h-8" />
-            </div>
+            </button>
             {onBack && (
-              <button onClick={onBack} className="hidden md:flex items-center gap-1 text-gray-400 hover:text-white text-sm transition-colors">
-                <ChevronLeft size={16} /> Home
+              <button onClick={onBack} className="flex items-center gap-1 text-gray-400 hover:text-white text-sm transition-colors">
+                <ChevronLeft size={16} /> <span className="hidden md:inline">Home</span>
               </button>
             )}
           </div>
