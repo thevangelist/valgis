@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Download, RotateCcw, Eye, Menu, X, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, ChevronLeft, Palette } from 'lucide-react';
+import { Upload, Download, RotateCcw, Eye, Menu, X, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, ChevronLeft, Palette, ChevronDown } from 'lucide-react';
 import heic2any from 'heic2any';
 import UTIF from 'utif';
 import { useImageProcessor } from './hooks/useImageProcessor';
@@ -115,6 +115,38 @@ const filterGroups = {
 Object.entries(filterGroups).forEach(([, g]) =>
   Object.entries(g.filters).forEach(([k, f]) => { filterMeta[k] = { ...f, group: g.title }; })
 );
+
+// ─── Collapsible panel ────────────────────────────────────────────────────────
+
+function CollapsiblePanel({
+  id, title, headerExtra, children, defaultOpen = true,
+}: {
+  id: string; title: string; headerExtra?: React.ReactNode;
+  children: React.ReactNode; defaultOpen?: boolean;
+}) {
+  const storageKey = `valgis.panel.${id}`;
+  const [open, setOpen] = useState(() => {
+    const stored = localStorage.getItem(storageKey);
+    return stored === null ? defaultOpen : stored === '1';
+  });
+  useEffect(() => { localStorage.setItem(storageKey, open ? '1' : '0'); }, [storageKey, open]);
+
+  return (
+    <div className="bg-gray-900 rounded-lg border border-gray-700/60 overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-800/50 transition-colors"
+      >
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{title}</span>
+        <div className="flex items-center gap-2">
+          {headerExtra}
+          <ChevronDown size={14} className={`text-gray-500 transition-transform ${open ? '' : '-rotate-90'}`} />
+        </div>
+      </button>
+      {open && <div className="px-3 pb-3">{children}</div>}
+    </div>
+  );
+}
 
 const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
   const [filter,           setFilter          ] = useState<FilterName>('none');
@@ -529,11 +561,11 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
               </div>
 
               {/* ── Lighting preset ── */}
-              <div className="bg-gray-900 rounded-lg p-3 border border-gray-700/60">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Lighting Conditions</span>
-                  <span className="text-[11px] text-gray-500">sets sliders below</span>
-                </div>
+              <CollapsiblePanel
+                id="lighting"
+                title="Lighting Conditions"
+                headerExtra={<span className="text-[11px] text-gray-500">sets sliders below</span>}
+              >
                 <Select value={lightingPreset} onValueChange={v => v && applyLightingPreset(v)}>
                   <SelectTrigger className="w-full bg-gray-700 border-gray-600 text-gray-200 text-xs h-8">
                     <SelectValue>{lightingPresets[lightingPreset as keyof typeof lightingPresets].name}</SelectValue>
@@ -547,11 +579,10 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 {lightingPreset !== 'none' && (
                   <p className="text-xs text-gray-500 mt-1.5 leading-tight">{lightingPresets[lightingPreset as keyof typeof lightingPresets].desc}</p>
                 )}
-              </div>
+              </CollapsiblePanel>
 
               {/* ── Spectral filters ── */}
-              <div className="bg-gray-900 rounded-lg p-3 border border-gray-700/60">
-                <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Spectral Filter</span>
+              <CollapsiblePanel id="spectral" title="Spectral Filter">
                 <div className="space-y-2.5">
                   {Object.entries(filterGroups).map(([gk, group]) => (
                     <div key={gk}>
@@ -573,32 +604,29 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                     </div>
                   ))}
                 </div>
-              </div>
+              </CollapsiblePanel>
 
               {/* ── Basic adjustments ── */}
-              <div className="bg-gray-900 rounded-lg p-3 border border-gray-700/60">
-                <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">Basic</span>
+              <CollapsiblePanel id="basic" title="Basic">
                 <div className="space-y-2.5">
                   <Slider label="Brightness" value={brightness}  min={0} max={200} defaultVal={100} onChange={setBrightness}/>
                   <Slider label="Contrast"   value={contrast}    min={0} max={200} defaultVal={100} onChange={setContrast}/>
                   <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}/>
                 </div>
-              </div>
+              </CollapsiblePanel>
 
               {/* ── Enhancement ── */}
-              <div className="bg-gray-900 rounded-lg p-3 border border-gray-700/60">
-                <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">Enhancement</span>
+              <CollapsiblePanel id="enhancement" title="Enhancement">
                 <div className="space-y-2.5">
                   <Slider label="Shadow Recovery"    value={shadowRecovery}    min={0} max={100} defaultVal={0} onChange={setShadowRecovery}/>
                   <Slider label="Highlight Recovery" value={highlightRecovery} min={0} max={100} defaultVal={0} onChange={setHighlightRecovery}/>
                   <Slider label="Clarity"            value={clarity}           min={0} max={100} defaultVal={0} onChange={setClarity}/>
                   <Slider label="Dehaze"             value={dehaze}            min={0} max={100} defaultVal={0} onChange={setDehaze}/>
                 </div>
-              </div>
+              </CollapsiblePanel>
 
               {/* ── Detail ── */}
-              <div className="bg-gray-900 rounded-lg p-3 border border-gray-700/60">
-                <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">Detail</span>
+              <CollapsiblePanel id="detail" title="Detail">
                 <div className="space-y-3">
                   {/* Noise Reduction */}
                   <div>
@@ -654,7 +682,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                     </div>
                   </div>
                 </div>
-              </div>
+              </CollapsiblePanel>
 
               {/* Histogram */}
               {histogram && (() => {
@@ -667,8 +695,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 const pts = (vals: number[]) =>
                   `0,64 ${vals.map((v, i) => `${i},${64 - (v / gMax) * 64}`).join(' ')} 255,64`;
                 return (
-                  <div className="bg-gray-900 rounded-lg p-3 border border-gray-700/60">
-                    <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Histogram</span>
+                  <CollapsiblePanel id="histogram" title="Histogram">
                     <div className="relative h-20 bg-gray-950 rounded overflow-hidden">
                       <svg className="absolute inset-0 w-full h-full" viewBox="0 0 256 64" preserveAspectRatio="none">
                         {/* luminance */}
@@ -690,7 +717,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                         );
                       })}
                     </div>
-                  </div>
+                  </CollapsiblePanel>
                 );
               })()}
 
