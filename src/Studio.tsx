@@ -491,13 +491,6 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
           <div className="flex items-center gap-1 md:gap-2">
             {image && (
               <>
-                <button
-                  onClick={() => setShowOriginal(s => !s)}
-                  className={`border px-2 md:px-3 py-1.5 md:py-2 rounded-md text-xs md:text-sm flex items-center gap-1 md:gap-2 transition-colors ${showOriginal ? 'bg-zinc-600 border-zinc-500 text-white' : 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300'}`}
-                >
-                  <Eye size={14}/>
-                  <span className="hidden sm:inline">{showOriginal ? 'Edited' : 'Original'}</span>
-                </button>
                 <div className="hidden md:flex items-center gap-1 bg-gray-900 rounded-md p-1 border border-gray-700">
                   <span className="text-xs text-gray-500 px-1">Render:</span>
                   {(['smooth','crisp','pixelated'] as const).map(m => (
@@ -529,6 +522,13 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                   <button onClick={() => setZoom(z => Math.min(z*1.25,10))} className="hover:bg-gray-700 px-2 py-1.5 md:py-2 text-gray-300 hover:text-white border-r border-gray-700 transition-colors"><ZoomIn size={14}/></button>
                   <span className="hidden md:inline text-xs text-gray-500 px-2 min-w-[3rem] text-center tabular-nums">{Math.round(zoom*100)}%</span>
                 </div>
+                <button
+                  onClick={() => setShowOriginal(s => !s)}
+                  className={`border px-2 md:px-3 py-1.5 md:py-2 rounded-md text-xs md:text-sm flex items-center gap-1 md:gap-2 transition-colors ${showOriginal ? 'bg-zinc-600 border-zinc-500 text-white' : 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300'}`}
+                >
+                  <Eye size={14}/>
+                  <span className="hidden sm:inline">{showOriginal ? 'Edited' : 'Original'}</span>
+                </button>
                 <button onClick={resetSettings} className="bg-gray-800 hover:bg-gray-700 border border-gray-700 px-2 md:px-3 py-1.5 md:py-2 rounded-md text-xs md:text-sm flex items-center gap-1 text-gray-300 hover:text-white transition-colors">
                   <RotateCcw size={14}/><span className="hidden lg:inline">Reset</span>
                 </button>
