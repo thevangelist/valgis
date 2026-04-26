@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { X, RotateCcw, Share2, Download, SlidersHorizontal } from 'lucide-react';
+import { X, RotateCcw, Share2, Download, SlidersHorizontal, RefreshCw } from 'lucide-react';
 import { useLiveCamera } from './hooks/useLiveCamera';
 import type { ProcessOptions } from './worker/imageProcessor';
 
@@ -70,9 +70,17 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
   const [previewUrl, setPreviewUrl]     = useState<string | null>(null);
   const [saving, setSaving]             = useState(false);
   const [showSliders, setShowSliders]   = useState(false);
-  const [brightness, setBrightness]     = useState(100);
-  const [contrast, setContrast]         = useState(100);
-  const [saturation, setSaturation]     = useState(100);
+  const [brightness, setBrightness]     = useState(() => Number(localStorage.getItem('valgis.brightness')) || 100);
+  const [contrast, setContrast]         = useState(() => Number(localStorage.getItem('valgis.contrast'))   || 100);
+  const [saturation, setSaturation]     = useState(() => Number(localStorage.getItem('valgis.saturation')) || 100);
+
+  useEffect(() => { localStorage.setItem('valgis.brightness', String(brightness)); }, [brightness]);
+  useEffect(() => { localStorage.setItem('valgis.contrast',   String(contrast));   }, [contrast]);
+  useEffect(() => { localStorage.setItem('valgis.saturation', String(saturation)); }, [saturation]);
+
+  const resetAdjustments = useCallback(() => {
+    setBrightness(100); setContrast(100); setSaturation(100);
+  }, []);
 
   const { state, error, fps, start, stop, pause, resume, setOptions, captureHighRes } =
     useLiveCamera(canvasRef);
@@ -180,6 +188,17 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
             {/* Quick adjust sliders */}
             {showSliders && (
               <div className="relative px-5 pb-2 pt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-white/40 text-[10px] uppercase tracking-wider">Adjustments</span>
+                  <button
+                    onClick={resetAdjustments}
+                    disabled={!hasAdjustments}
+                    className="flex items-center gap-1 text-white/50 text-[10px] disabled:opacity-30 active:text-white"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Reset
+                  </button>
+                </div>
                 <QuickSlider label="B" value={brightness} min={50} max={150} onChange={setBrightness} />
                 <QuickSlider label="C" value={contrast}   min={50} max={150} onChange={setContrast} />
                 <QuickSlider label="S" value={saturation} min={0}  max={200} onChange={setSaturation} />
