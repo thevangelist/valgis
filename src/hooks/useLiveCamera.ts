@@ -224,9 +224,9 @@ export function useLiveCamera(outputCanvasRef: RefObject<HTMLCanvasElement>) {
         const oc  = new OffscreenCanvas(width, height);
         const ctx = oc.getContext('2d')!;
         ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels), width, height), 0, 0);
-        // PNG for lossless; falls back to JPEG on browsers that don't support PNG in convertToBlob
-        oc.convertToBlob({ type: 'image/png' }).then(resolve).catch(() =>
-          oc.convertToBlob({ type: 'image/jpeg', quality: 0.97 }).then(resolve)
+        // JPEG for iOS Photos compatibility; falls back to PNG
+        oc.convertToBlob({ type: 'image/jpeg', quality: 0.97 }).then(resolve).catch(() =>
+          oc.convertToBlob({ type: 'image/png' }).then(resolve)
         );
       };
 

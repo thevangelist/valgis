@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Upload, Download, RotateCcw, Eye, Menu, X, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, ChevronLeft, Palette, ChevronDown } from 'lucide-react';
 import heic2any from 'heic2any';
 import UTIF from 'utif';
+import LibRaw from 'libraw-wasm';
 import { useImageProcessor } from './hooks/useImageProcessor';
 import type { ProcessOptions } from './hooks/useImageProcessor';
 import type { HslBandKey, HslBandAdjustment, HslAdjustments, WheelValue, ColorWheelAdjustments } from './worker/imageProcessor';
@@ -313,6 +314,36 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
       }
     }
 
+    const RAW_EXT = /\.(cr2|cr3|nef|nrw|arw|srf|sr2|dng|orf|rw2|rwl|pef|ptx|raf|3fr|fff|iiq|cap|mef|mos|mrw|raw|rw1|srw|x3f)$/i;
+    if (RAW_EXT.test(file.name)) {
+      try {
+        setProcessingMessage('Decoding RAW file…');
+        const buf = await file.arrayBuffer();
+        const libraw = new LibRaw();
+        await libraw.open(new Uint8Array(buf), { useCameraWb: true, outputColor: 1, outputBps: 8, userQual: 3 });
+        const meta = await libraw.metadata();
+        const rgb  = await libraw.imageData() as Uint8Array;
+        const W = meta.width as number;
+        const H = meta.height as number;
+        const rgba = new Uint8ClampedArray(W * H * 4);
+        for (let i = 0; i < W * H; i++) {
+          rgba[i * 4]     = rgb[i * 3];
+          rgba[i * 4 + 1] = rgb[i * 3 + 1];
+          rgba[i * 4 + 2] = rgb[i * 3 + 2];
+          rgba[i * 4 + 3] = 255;
+        }
+        const cvs = document.createElement('canvas');
+        cvs.width = W; cvs.height = H;
+        cvs.getContext('2d')!.putImageData(new ImageData(rgba, W, H), 0, 0);
+        const rblob = await new Promise<Blob>((res, rej) => cvs.toBlob(b => b ? res(b) : rej(), 'image/png'));
+        fileToProcess = new File([rblob], file.name.replace(RAW_EXT, '.png'), { type: 'image/png' });
+      } catch (err) {
+        console.error(err);
+        alert('Failed to decode RAW file. The format may not be supported.');
+        setIsProcessing(false); setProcessingMessage(''); return;
+      }
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const img = new Image();
@@ -331,7 +362,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
   const handleDrop      = (e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file && (file.type.startsWith('image/') || /\.(heic|heif|tiff?)$/i.test(file.name)))
+    if (file && (file.type.startsWith('image/') || /\.(heic|heif|tiff?|cr2|cr3|nef|nrw|arw|srf|sr2|dng|orf|rw2|rwl|pef|ptx|raf|3fr|fff|iiq|mef|mrw|raw|srw|x3f)$/i.test(file.name)))
       processImageFile(file);
   };
 
@@ -554,7 +585,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 <label className="cursor-pointer text-center w-full">
                   <Upload className="mx-auto mb-1.5" size={20}/>
                   <span className="text-[11px] block">{isDragging?'Drop image here':'Upload or Drop Image'}</span>
-                  <input type="file" accept="image/png,image/jpeg,image/jpg,image/tiff,image/tif,image/heic,image/heif,image/webp,.png,.jpg,.jpeg,.tiff,.tif,.heic,.heif"
+                  <input type="file" accept="image/png,image/jpeg,image/tiff,image/heic,image/heif,image/webp,.png,.jpg,.jpeg,.tiff,.tif,.heic,.heif,.cr2,.cr3,.nef,.nrw,.arw,.srf,.sr2,.dng,.orf,.rw2,.rwl,.pef,.ptx,.raf,.3fr,.fff,.iiq,.mef,.mrw,.raw,.srw,.x3f"
                     onChange={e => e.target.files?.[0] && processImageFile(e.target.files[0])} className="hidden"/>
                 </label>
               </div>

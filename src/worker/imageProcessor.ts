@@ -783,3 +783,13 @@ self.onmessage = (e: MessageEvent) => {
 
   (self as unknown as Worker).postMessage({ pixels: data.buffer, width, height }, [data.buffer]);
 };
+
+// ─── Test exports (not used in production) ───────────────────────────────────
+export const _test = {
+  rgbToYCbCr, yCbCrToRgb,
+  rgbToLab, labToRgb,
+  rgbToYuv, yuvToRgb,
+  rgbToHsl, hslToRgb,
+  bandWeight,
+  decorrelationStretch,
+};

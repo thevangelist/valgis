@@ -27,7 +27,7 @@ const BASE_OPTS: ProcessOptions = {
 // ─── Save helper ──────────────────────────────────────────────────────────────
 
 async function saveImage(blob: Blob, filename: string) {
-  const file = new File([blob], filename, { type: 'image/jpeg' });
+  const file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
   if (navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file] }); return; } catch { /* cancelled or unsupported */ }
   }
@@ -116,7 +116,8 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
   const handleSave = useCallback(async () => {
     if (!previewBlob) return;
     setSaving(true);
-    await saveImage(previewBlob, `valgis-${filter}-${Date.now()}.png`);
+    const ext = previewBlob.type === 'image/jpeg' ? 'jpg' : 'png';
+    await saveImage(previewBlob, `valgis-${filter}-${Date.now()}.${ext}`);
     setSaving(false);
     handleDismiss();
   }, [previewBlob, filter, handleDismiss]);
