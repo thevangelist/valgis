@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Download, RotateCcw, Eye, Menu, X, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, ChevronLeft, Palette, ChevronDown } from 'lucide-react';
+import { Upload, Download, RotateCcw, Eye, EyeOff, Menu, X, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, ChevronLeft, Palette, ChevronDown } from 'lucide-react';
 import heic2any from 'heic2any';
 import UTIF from 'utif';
 import LibRaw from 'libraw-wasm';
@@ -120,10 +120,11 @@ Object.entries(filterGroups).forEach(([, g]) =>
 // ─── Collapsible panel ────────────────────────────────────────────────────────
 
 function CollapsiblePanel({
-  id, title, headerExtra, children, defaultOpen = true,
+  id, title, headerExtra, children, defaultOpen = true, enabled, onEnabledChange,
 }: {
   id: string; title: string; headerExtra?: React.ReactNode;
   children: React.ReactNode; defaultOpen?: boolean;
+  enabled?: boolean; onEnabledChange?: (v: boolean) => void;
 }) {
   const storageKey = `valgis.panel.${id}`;
   const [open, setOpen] = useState(() => {
@@ -140,11 +141,22 @@ function CollapsiblePanel({
       >
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{title}</span>
         <div className="flex items-center gap-2">
+          {onEnabledChange !== undefined && (
+            <span
+              role="button"
+              onClick={e => { e.stopPropagation(); onEnabledChange(!enabled); }}
+              className="cursor-pointer"
+            >
+              {enabled !== false
+                ? <Eye size={13} className="text-gray-300"/>
+                : <EyeOff size={13} className="text-gray-600"/>}
+            </span>
+          )}
           {headerExtra}
           <ChevronDown size={14} className={`text-gray-500 transition-transform ${open ? '' : '-rotate-90'}`} />
         </div>
       </button>
-      {open && <div className="px-3 pb-3">{children}</div>}
+      {open && <div className={`px-3 pb-3 ${enabled === false ? 'opacity-40 pointer-events-none select-none' : ''}`}>{children}</div>}
     </div>
   );
 }
@@ -186,6 +198,10 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
   const [hslAdjustments,   setHslAdjustments  ] = useState<HslAdjustments>(defaultHslAdjustments);
   const [selectedBand,     setSelectedBand    ] = useState<HslBandKey>('reds');
   const [colorSidebarOpen, setColorSidebarOpen] = useState(true);
+  const [toneEnabled,        setToneEnabled       ] = useState(true);
+  const [enhancementEnabled, setEnhancementEnabled] = useState(true);
+  const [detailEnabled,      setDetailEnabled     ] = useState(true);
+
   const [colorWheels,      setColorWheels     ] = useState<ColorWheelAdjustments>({
     lift:  { x: 0, y: 0, luma: 0 },
     gamma: { x: 0, y: 0, luma: 0 },
@@ -227,12 +243,20 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
     }
 
     const opts: ProcessOptions = {
-      filter, brightness, contrast, saturation,
-      shadowRecovery, highlightRecovery, clarity, dehaze,
-      noiseReduction, noiseAlgorithm, sharpening, sharpenAlgorithm,
+      filter,
+      brightness:        toneEnabled ? brightness        : 100,
+      contrast:          toneEnabled ? contrast          : 100,
+      saturation:        toneEnabled ? saturation        : 100,
+      shadowRecovery:    enhancementEnabled ? shadowRecovery    : 0,
+      highlightRecovery: enhancementEnabled ? highlightRecovery : 0,
+      clarity:           enhancementEnabled ? clarity           : 0,
+      dehaze:            enhancementEnabled ? dehaze            : 0,
+      noiseReduction:    detailEnabled ? noiseReduction    : 0,
+      noiseAlgorithm, sharpening: detailEnabled ? sharpening : 0, sharpenAlgorithm,
       hslAdjustments,
       colorWheels,
-      preNormalize, postNormalize,
+      preNormalize:  toneEnabled ? preNormalize  : 0,
+      postNormalize: toneEnabled ? postNormalize : 0,
     };
 
     setIsEditing(true);
@@ -243,6 +267,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
     noiseReduction, noiseAlgorithm, sharpening, sharpenAlgorithm,
     hslAdjustments, colorWheels, showOriginal,
     preNormalize, postNormalize,
+    toneEnabled, enhancementEnabled, detailEnabled,
   ]);
 
   // ── Histogram ───────────────────────────────────────────────────────────────
@@ -471,29 +496,56 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
 
   type SliderProps = {
     label: string; value: number; min: number; max: number; defaultVal: number;
-    onChange: (v: number) => void; title?: string;
+    onChange: (v: number) => void; title?: string; gradient?: string;
   };
-  const Slider = ({ label, value, min, max, defaultVal, onChange, title }: SliderProps) => (
-    <div>
-      <div className="flex justify-between items-center mb-1.5" title={title}>
-        <span className="text-xs font-medium text-gray-300">{label}</span>
-        <span className="flex items-center gap-1">
-          <span className="text-xs text-gray-400">{value}%</span>
-          {value !== defaultVal && (
-            <button onClick={() => onChange(defaultVal)} className="text-gray-600 hover:text-gray-300 transition-colors" title={`Reset to ${defaultVal}`}>
-              <RefreshCw size={10} />
-            </button>
-          )}
-        </span>
+  const Slider = ({ label, value, min, max, defaultVal, onChange, title, gradient }: SliderProps) => {
+    const [editing, setEditing] = useState(false);
+    const [editVal, setEditVal] = useState('');
+    return (
+      <div>
+        <div className="flex justify-between items-center mb-1.5" title={title}>
+          <span className="text-xs font-medium text-gray-300">{label}</span>
+          <span className="flex items-center gap-1">
+            {editing ? (
+              <input
+                type="number" value={editVal} autoFocus
+                className="w-12 text-xs text-right bg-gray-700 text-gray-200 rounded px-1 outline-none tabular-nums"
+                onChange={e => setEditVal(e.target.value)}
+                onBlur={() => {
+                  const n = parseInt(editVal, 10);
+                  if (!isNaN(n)) onChange(Math.max(min, Math.min(max, n)));
+                  setEditing(false);
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  if (e.key === 'Escape') setEditing(false);
+                }}
+              />
+            ) : (
+              <button
+                onClick={() => { setEditVal(String(value)); setEditing(true); }}
+                className="text-xs text-gray-400 hover:text-gray-200 tabular-nums transition-colors min-w-[2rem] text-right"
+              >
+                {value}
+              </button>
+            )}
+            {value !== defaultVal && !editing && (
+              <button onClick={() => onChange(defaultVal)} className="text-gray-600 hover:text-gray-300 transition-colors" title={`Reset to ${defaultVal}`}>
+                <RefreshCw size={10} />
+              </button>
+            )}
+          </span>
+        </div>
+        <ShadSlider
+          min={min} max={max}
+          value={[value]}
+          onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; onChange(v as number); }}
+          className="w-full"
+          trackGradient={gradient}
+        />
       </div>
-      <ShadSlider
-        min={min} max={max}
-        value={[value]}
-        onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; onChange(v as number); }}
-        className="w-full"
-      />
-    </div>
-  );
+    );
+  };
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Render
@@ -640,37 +692,54 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 </div>
               </CollapsiblePanel>
 
-              {/* ── Basic adjustments ── */}
-              <CollapsiblePanel id="basic" title="Basic">
+              {/* ── Tone ── */}
+              <CollapsiblePanel
+                id="tone"
+                title="Tone"
+                enabled={toneEnabled}
+                onEnabledChange={setToneEnabled}
+              >
                 <div className="space-y-2.5">
-                  <Slider label="Brightness" value={brightness}  min={0} max={200} defaultVal={100} onChange={setBrightness}/>
-                  <Slider label="Contrast"   value={contrast}    min={0} max={200} defaultVal={100} onChange={setContrast}/>
-                  <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}/>
-                </div>
-              </CollapsiblePanel>
-
-              {/* ── Normalization ── */}
-              <CollapsiblePanel id="normalization" title="Normalization">
-                <div className="space-y-2.5">
-                  <Slider label="Pre-filter"  value={preNormalize}  min={0} max={100} defaultVal={100} onChange={setPreNormalize}/>
-                  <Slider label="Post-filter" value={postNormalize} min={0} max={100} defaultVal={100} onChange={setPostNormalize}/>
+                  <span className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest pt-0.5">Exposure</span>
+                  <Slider label="Brightness" value={brightness}  min={0} max={200} defaultVal={100} onChange={setBrightness}
+                    gradient="linear-gradient(to right, #111 0%, #666 50%, #fff 100%)"/>
+                  <Slider label="Contrast"   value={contrast}    min={0} max={200} defaultVal={100} onChange={setContrast}
+                    gradient="linear-gradient(to right, hsl(0,0%,55%) 0%, hsl(0,0%,40%) 50%, hsl(0,0%,8%) 65%, hsl(0,0%,95%) 100%)"/>
+                  <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}
+                    gradient="linear-gradient(to right, hsl(0,0%,45%) 0%, hsl(0,0%,55%) 50%, hsl(14,70%,55%) 100%)"/>
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="flex-1 border-t border-gray-700/60"/>
+                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest shrink-0">Normalize</span>
+                    <div className="flex-1 border-t border-gray-700/60"/>
+                  </div>
+                  <Slider label="Pre-filter"  value={preNormalize}  min={0} max={100} defaultVal={100} onChange={setPreNormalize}
+                    gradient="linear-gradient(to right, hsl(210,35%,40%) 0%, hsl(0,0%,50%) 40%, hsl(30,30%,55%) 100%)"/>
+                  <Slider label="Post-filter" value={postNormalize} min={0} max={100} defaultVal={100} onChange={setPostNormalize}
+                    gradient="linear-gradient(to right, hsl(0,0%,20%) 0%, hsl(0,0%,55%) 50%, hsl(0,0%,92%) 100%)"/>
                 </div>
               </CollapsiblePanel>
 
               {/* ── Enhancement ── */}
-              <CollapsiblePanel id="enhancement" title="Enhancement">
+              <CollapsiblePanel id="enhancement" title="Enhancement"
+                enabled={enhancementEnabled} onEnabledChange={setEnhancementEnabled}>
                 <div className="space-y-2.5">
-                  <Slider label="Shadow Recovery"    value={shadowRecovery}    min={0} max={100} defaultVal={0} onChange={setShadowRecovery}/>
-                  <Slider label="Highlight Recovery" value={highlightRecovery} min={0} max={100} defaultVal={0} onChange={setHighlightRecovery}/>
-                  <Slider label="Clarity"            value={clarity}           min={0} max={100} defaultVal={0} onChange={setClarity}/>
-                  <Slider label="Dehaze"             value={dehaze}            min={0} max={100} defaultVal={0} onChange={setDehaze}/>
+                  <Slider label="Shadow Recovery"    value={shadowRecovery}    min={0} max={100} defaultVal={0} onChange={setShadowRecovery}
+                    gradient="linear-gradient(to right, #0a0a0a 0%, hsl(30,15%,40%) 100%)"/>
+                  <Slider label="Highlight Recovery" value={highlightRecovery} min={0} max={100} defaultVal={0} onChange={setHighlightRecovery}
+                    gradient="linear-gradient(to right, hsl(40,15%,60%) 0%, #f8f8f8 100%)"/>
+                  <Slider label="Clarity"            value={clarity}           min={0} max={100} defaultVal={0} onChange={setClarity}
+                    gradient="linear-gradient(to right, hsl(0,0%,40%) 0%, hsl(0,0%,88%) 100%)"/>
+                  <Slider label="Dehaze"             value={dehaze}            min={0} max={100} defaultVal={0} onChange={setDehaze}
+                    gradient="linear-gradient(to right, hsl(210,20%,55%) 0%, hsl(30,10%,35%) 100%)"/>
                 </div>
               </CollapsiblePanel>
 
               {/* ── Detail ── */}
-              <CollapsiblePanel id="detail" title="Detail">
+              <CollapsiblePanel id="detail" title="Detail"
+                enabled={detailEnabled} onEnabledChange={setDetailEnabled}>
                 <div className="space-y-3">
                   {/* Noise Reduction */}
+                  <span className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest pt-0.5">Noise</span>
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs font-medium text-gray-300">Noise Reduction</span>
@@ -679,7 +748,8 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                         {noiseReduction !== 0 && <button onClick={() => setNoiseReduction(0)} className="text-gray-600 hover:text-gray-300"><RefreshCw size={10}/></button>}
                       </span>
                     </div>
-                    <ShadSlider min={0} max={100} value={[noiseReduction]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setNoiseReduction(v as number); }} className="w-full mb-2"/>
+                    <ShadSlider min={0} max={100} value={[noiseReduction]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setNoiseReduction(v as number); }} className="w-full mb-2"
+                      trackGradient="linear-gradient(to right, hsl(0,0%,55%) 0%, hsl(220,12%,50%) 100%)"/>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[11px] text-gray-500 shrink-0">Method:</span>
                       <ToggleGroup
@@ -696,7 +766,11 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                       </ToggleGroup>
                     </div>
                   </div>
-                  <div className="border-t border-gray-700/60"/>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 border-t border-gray-700/60"/>
+                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest shrink-0">Sharpen</span>
+                    <div className="flex-1 border-t border-gray-700/60"/>
+                  </div>
                   {/* Sharpening */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
@@ -706,7 +780,8 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                         {sharpening !== 0 && <button onClick={() => setSharpening(0)} className="text-gray-600 hover:text-gray-300"><RefreshCw size={10}/></button>}
                       </span>
                     </div>
-                    <ShadSlider min={0} max={100} value={[sharpening]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setSharpening(v as number); }} className="w-full mb-2"/>
+                    <ShadSlider min={0} max={100} value={[sharpening]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setSharpening(v as number); }} className="w-full mb-2"
+                      trackGradient="linear-gradient(to right, hsl(0,0%,35%) 0%, hsl(0,0%,88%) 100%)"/>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[11px] text-gray-500 shrink-0">Method:</span>
                       <ToggleGroup

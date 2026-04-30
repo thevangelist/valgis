@@ -9,9 +9,10 @@ type SliderProps = {
   onValueChange?: (value: number[]) => void
   className?: string
   disabled?: boolean
+  trackGradient?: string
 }
 
-function Slider({ min = 0, max = 100, value, defaultValue, onValueChange, className, disabled }: SliderProps) {
+function Slider({ min = 0, max = 100, value, defaultValue, onValueChange, className, disabled, trackGradient }: SliderProps) {
   const controlled = value !== undefined
   const [internal, setInternal] = React.useState(defaultValue?.[0] ?? min)
   const current = controlled ? (value?.[0] ?? min) : internal
@@ -26,12 +27,16 @@ function Slider({ min = 0, max = 100, value, defaultValue, onValueChange, classN
 
   return (
     <div className={cn("relative flex w-full touch-none items-center", className)}>
-      <div className="relative w-full h-1.5 rounded-full bg-gray-600 overflow-visible">
-        <div
-          className="absolute h-full rounded-full bg-blue-500"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      {trackGradient ? (
+        <div className="relative w-full h-1.5 rounded-full overflow-visible" style={{ background: trackGradient }}/>
+      ) : (
+        <div className="relative w-full h-1.5 rounded-full bg-gray-600 overflow-visible">
+          <div
+            className="absolute h-full rounded-full bg-blue-500"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
       <input
         type="range"
         min={min}
