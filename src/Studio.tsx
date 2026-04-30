@@ -162,6 +162,8 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
   const [noiseAlgorithm,   setNoiseAlgorithm  ] = useState<'median'|'gaussian'|'bilateral'>('median');
   const [sharpening,       setSharpening      ] = useState(0);
   const [sharpenAlgorithm, setSharpenAlgorithm] = useState<'unsharp'|'highpass'|'laplacian'>('unsharp');
+  const [preNormalize,     setPreNormalize    ] = useState(100);
+  const [postNormalize,    setPostNormalize   ] = useState(100);
   const [lightingPreset,   setLightingPreset  ] = useState('none');
   const [renderingMode,    setRenderingMode   ] = useState<'smooth'|'crisp'|'pixelated'>('smooth');
 
@@ -230,6 +232,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
       noiseReduction, noiseAlgorithm, sharpening, sharpenAlgorithm,
       hslAdjustments,
       colorWheels,
+      preNormalize, postNormalize,
     };
 
     setIsEditing(true);
@@ -239,6 +242,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
     shadowRecovery, highlightRecovery, clarity, dehaze,
     noiseReduction, noiseAlgorithm, sharpening, sharpenAlgorithm,
     hslAdjustments, colorWheels, showOriginal,
+    preNormalize, postNormalize,
   ]);
 
   // ── Histogram ───────────────────────────────────────────────────────────────
@@ -642,6 +646,14 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                   <Slider label="Brightness" value={brightness}  min={0} max={200} defaultVal={100} onChange={setBrightness}/>
                   <Slider label="Contrast"   value={contrast}    min={0} max={200} defaultVal={100} onChange={setContrast}/>
                   <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}/>
+                </div>
+              </CollapsiblePanel>
+
+              {/* ── Normalization ── */}
+              <CollapsiblePanel id="normalization" title="Normalization">
+                <div className="space-y-2.5">
+                  <Slider label="Pre-filter"  value={preNormalize}  min={0} max={100} defaultVal={100} onChange={setPreNormalize}/>
+                  <Slider label="Post-filter" value={postNormalize} min={0} max={100} defaultVal={100} onChange={setPostNormalize}/>
                 </div>
               </CollapsiblePanel>
 

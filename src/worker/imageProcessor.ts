@@ -47,6 +47,8 @@ export interface ProcessOptions {
   sharpenAlgorithm: 'unsharp' | 'highpass' | 'laplacian';
   hslAdjustments?: HslAdjustments;
   colorWheels?: ColorWheelAdjustments;
+  preNormalize?: number;   // 0–100, default 100. Gray-world WB + soft luma stretch before filter.
+  postNormalize?: number;  // 0–100, default 100. Per-channel percentile stretch after filter.
 }
 
 // ─── Color Space Conversions ──────────────────────────────────────────────────
@@ -309,6 +311,197 @@ function decorrelationStretch(
     data[i*4]   = Math.min(255, Math.max(0, Math.round((outR[i] - gMin) / gRange * 255)));
     data[i*4+1] = Math.min(255, Math.max(0, Math.round((outG[i] - gMin) / gRange * 255)));
     data[i*4+2] = Math.min(255, Math.max(0, Math.round((outB[i] - gMin) / gRange * 255)));
+  }
+}
+
+// ─── Pre-filter Normalization ────────────────────────────────────────────────
+//
+// Gray-world white balance (capped) + gentle luma percentile stretch.
+// Feeds the filter a balanced input regardless of scene tint.
+// EMA is filter-agnostic: a single 'pre' state survives filter switches.
+
+interface PreNormState {
+  gainR: number; gainG: number; gainB: number;
+  minL: number;  maxL: number;
+  frames: number;
+}
+const preNormEMA: { state: PreNormState | null } = { state: null };
+
+function clampN(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+function applyPreNormalize(
+  data: Uint8ClampedArray,
+  n: number,
+  strength: number,
+  live: boolean,
+): void {
+  if (strength <= 0) return;
+
+  // Sample for stats — same density as PCA
+  const step = Math.max(1, Math.floor(n / 50_000));
+
+  // Per-channel means → gray-world gains
+  let sumR = 0, sumG = 0, sumB = 0, cnt = 0;
+  for (let i = 0; i < n; i += step) {
+    sumR += data[i*4]; sumG += data[i*4+1]; sumB += data[i*4+2];
+    cnt++;
+  }
+  if (cnt === 0) return;
+  const meanR = sumR / cnt, meanG = sumG / cnt, meanB = sumB / cnt;
+  const target = (meanR + meanG + meanB) / 3;
+
+  // Cap gains to avoid overcorrecting genuinely monochrome scenes
+  let gainR = clampN(target / Math.max(1, meanR), 0.7, 1.4);
+  let gainG = clampN(target / Math.max(1, meanG), 0.7, 1.4);
+  let gainB = clampN(target / Math.max(1, meanB), 0.7, 1.4);
+
+  // Luma histogram (after WB) for percentile bounds
+  const histL = new Int32Array(256);
+  for (let i = 0; i < n; i += step) {
+    const r = Math.min(255, data[i*4]   * gainR);
+    const g = Math.min(255, data[i*4+1] * gainG);
+    const b = Math.min(255, data[i*4+2] * gainB);
+    const l = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    histL[clampN(l, 0, 255)]++;
+  }
+  const loT = cnt * 0.01, hiT = cnt * 0.99;
+  let cum = 0, pLow = 0, pHigh = 255;
+  let foundLow = false;
+  for (let v = 0; v < 256; v++) {
+    cum += histL[v];
+    if (!foundLow && cum >= loT) { pLow = v; foundLow = true; }
+    if (cum >= hiT) { pHigh = v; break; }
+  }
+  // Pull bounds halfway toward [0, 255] — gentle stretch, not punchy
+  let minL = pLow * 0.5;
+  let maxL = 255 - (255 - pHigh) * 0.5;
+
+  if (live) {
+    const st = preNormEMA.state;
+    if (st && st.frames > 0) {
+      const a = 0.2;
+      gainR = a*gainR + (1-a)*st.gainR;
+      gainG = a*gainG + (1-a)*st.gainG;
+      gainB = a*gainB + (1-a)*st.gainB;
+      minL  = a*minL  + (1-a)*st.minL;
+      maxL  = a*maxL  + (1-a)*st.maxL;
+    }
+    preNormEMA.state = { gainR, gainG, gainB, minL, maxL, frames: (st?.frames ?? 0) + 1 };
+  }
+
+  const range = (maxL - minL) || 1;
+  const blend = strength / 100;
+
+  for (let i = 0; i < n; i++) {
+    const r0 = data[i*4], g0 = data[i*4+1], b0 = data[i*4+2];
+    let r = r0 * gainR;
+    let g = g0 * gainG;
+    let b = b0 * gainB;
+    // Uniform luma stretch — preserves hue
+    const lOld = 0.299*r + 0.587*g + 0.114*b;
+    if (lOld > 1) {
+      const lNew = clampN((lOld - minL) / range * 255, 0, 255);
+      const s = lNew / lOld;
+      r *= s; g *= s; b *= s;
+    }
+    data[i*4]   = clampN(r0 + (r - r0) * blend, 0, 255);
+    data[i*4+1] = clampN(g0 + (g - g0) * blend, 0, 255);
+    data[i*4+2] = clampN(b0 + (b - b0) * blend, 0, 255);
+  }
+}
+
+// ─── Post-filter Normalization ────────────────────────────────────────────────
+//
+// Per-channel percentile stretch on the filter's output. Recovers contrast in
+// any channel the filter compressed. Skipped when the output already spans the
+// full range (cheap "needs it?" check).
+// EMA keyed per filter, since each filter produces a different distribution.
+
+interface PostNormState {
+  minR: number; maxR: number;
+  minG: number; maxG: number;
+  minB: number; maxB: number;
+  frames: number;
+}
+const postNormEMA = new Map<string, PostNormState>();
+
+// Filters whose signature is hard clipping — use 5/95 percentiles so clipped
+// pixels stay clipped. Anything else uses 1/99.
+const HIGH_STRETCH_FILTERS = new Set<FilterName>(['lab2', 'lye', 'rgb0', 'crgb', 'yye', 'ywe']);
+
+function applyPostNormalize(
+  data: Uint8ClampedArray,
+  n: number,
+  strength: number,
+  filter: FilterName,
+  liveKey: string | null,
+): void {
+  if (strength <= 0) return;
+
+  const gentle = HIGH_STRETCH_FILTERS.has(filter);
+  const lowPct  = gentle ? 0.05 : 0.01;
+  const highPct = gentle ? 0.95 : 0.99;
+
+  const step = Math.max(1, Math.floor(n / 50_000));
+  const histR = new Int32Array(256);
+  const histG = new Int32Array(256);
+  const histB = new Int32Array(256);
+  let cnt = 0;
+  for (let i = 0; i < n; i += step) {
+    histR[data[i*4]]++;
+    histG[data[i*4+1]]++;
+    histB[data[i*4+2]]++;
+    cnt++;
+  }
+  if (cnt === 0) return;
+
+  const findBounds = (h: Int32Array): [number, number] => {
+    const loT = cnt * lowPct, hiT = cnt * highPct;
+    let cum = 0, lo = 0, hi = 255, foundLo = false;
+    for (let v = 0; v < 256; v++) {
+      cum += h[v];
+      if (!foundLo && cum >= loT) { lo = v; foundLo = true; }
+      if (cum >= hiT) { hi = v; break; }
+    }
+    return [lo, hi];
+  };
+
+  let [minR, maxR] = findBounds(histR);
+  let [minG, maxG] = findBounds(histG);
+  let [minB, maxB] = findBounds(histB);
+
+  // Skip if filter output is already well-spread on every channel
+  if ((maxR - minR) > 200 && (maxG - minG) > 200 && (maxB - minB) > 200) {
+    if (liveKey !== null) postNormEMA.delete(liveKey);
+    return;
+  }
+
+  if (liveKey !== null) {
+    const st = postNormEMA.get(liveKey);
+    if (st && st.frames > 0) {
+      const a = 0.25;
+      minR = a*minR + (1-a)*st.minR; maxR = a*maxR + (1-a)*st.maxR;
+      minG = a*minG + (1-a)*st.minG; maxG = a*maxG + (1-a)*st.maxG;
+      minB = a*minB + (1-a)*st.minB; maxB = a*maxB + (1-a)*st.maxB;
+    }
+    postNormEMA.set(liveKey, { minR, maxR, minG, maxG, minB, maxB, frames: (st?.frames ?? 0) + 1 });
+  }
+
+  const rR = (maxR - minR) || 1;
+  const rG = (maxG - minG) || 1;
+  const rB = (maxB - minB) || 1;
+  const blend = strength / 100;
+
+  for (let i = 0; i < n; i++) {
+    const r0 = data[i*4], g0 = data[i*4+1], b0 = data[i*4+2];
+    const r = clampN((r0 - minR) / rR * 255, 0, 255);
+    const g = clampN((g0 - minG) / rG * 255, 0, 255);
+    const b = clampN((b0 - minB) / rB * 255, 0, 255);
+    data[i*4]   = Math.round(r0 + (r - r0) * blend);
+    data[i*4+1] = Math.round(g0 + (g - g0) * blend);
+    data[i*4+2] = Math.round(b0 + (b - b0) * blend);
   }
 }
 
@@ -745,6 +938,11 @@ function applyHSLAdjustments(data: Uint8ClampedArray, n: number, adj: HslAdjustm
 
 // ─── Worker Entry Point ───────────────────────────────────────────────────────
 
+// Filters that already do their own normalization or have hand-tuned thresholds
+// that assume raw input — skip pre/post norm for these to avoid double-processing.
+const PRE_NORM_SKIP  = new Set<FilterName>(['none', 'autolevel', 'histeq', 'adaptive']);
+const POST_NORM_SKIP = new Set<FilterName>(['none', 'autolevel', 'histeq', 'satboost']);
+
 self.onmessage = (e: MessageEvent) => {
   const { pixels, width, height, options, live } = e.data as {
     pixels: ArrayBuffer;
@@ -764,13 +962,23 @@ self.onmessage = (e: MessageEvent) => {
     hslAdjustments,
     colorWheels,
   } = options;
+  const preNormalize  = options.preNormalize  ?? 100;
+  const postNormalize = options.postNormalize ?? 100;
 
   // liveKey enables EMA + sign stabilization for that filter.
   // Static image processing passes null → fresh PCA every time.
   const liveKey = live ? filter : null;
 
+  if (preNormalize > 0 && !PRE_NORM_SKIP.has(filter)) {
+    applyPreNormalize(data, n, preNormalize, !!live);
+  }
+
   if (filter !== 'none') {
     applyDecorrelationFilter(data, width, height, filter, liveKey);
+  }
+
+  if (postNormalize > 0 && !POST_NORM_SKIP.has(filter)) {
+    applyPostNormalize(data, n, postNormalize, filter, liveKey ? `${filter}:post` : null);
   }
 
   applyTonal(data, n, brightness, contrast, saturation, shadowRecovery, highlightRecovery, dehaze);
@@ -792,4 +1000,6 @@ export const _test = {
   rgbToHsl, hslToRgb,
   bandWeight,
   decorrelationStretch,
+  applyPreNormalize,
+  applyPostNormalize,
 };
