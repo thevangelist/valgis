@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { Matrix } from 'ml-matrix';
 import { _test } from '../worker/imageProcessor';
 
 const { rgbToYCbCr, yCbCrToRgb, rgbToLab, labToRgb, rgbToYuv, yuvToRgb, rgbToHsl, hslToRgb, bandWeight, decorrelationStretch } = _test;
@@ -49,10 +50,8 @@ describe('bandWeight', () => {
 });
 
 describe('decorrelationStretch', () => {
-  const { Matrix } = await import('ml-matrix');
-
   it('returns matrix with same shape as input', () => {
-    const data = Matrix.from2DArray([[100, 50, 200], [80, 120, 60], [30, 90, 150]]);
+    const data = new Matrix([[100, 50, 200], [80, 120, 60], [30, 90, 150]]);
     const result = decorrelationStretch(data);
     expect(result.rows).toBe(data.rows);
     expect(result.columns).toBe(data.columns);
@@ -62,14 +61,14 @@ describe('decorrelationStretch', () => {
     const rows = Array.from({ length: 10 }, () => [
       Math.random() * 255, Math.random() * 255, Math.random() * 255,
     ]);
-    const result = decorrelationStretch(Matrix.from2DArray(rows));
+    const result = decorrelationStretch(new Matrix(rows));
     for (let i = 0; i < result.rows; i++)
       for (let j = 0; j < result.columns; j++)
         expect(result.get(i, j)).toBeGreaterThanOrEqual(0);
   });
 
   it('uniform input stays uniform', () => {
-    const data = Matrix.from2DArray(Array.from({ length: 5 }, () => [128, 128, 128]));
+    const data = new Matrix(Array.from({ length: 5 }, () => [128, 128, 128]));
     const result = decorrelationStretch(data);
     for (let i = 0; i < result.rows; i++)
       for (let j = 0; j < result.columns; j++)

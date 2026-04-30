@@ -943,7 +943,7 @@ function applyHSLAdjustments(data: Uint8ClampedArray, n: number, adj: HslAdjustm
 const PRE_NORM_SKIP  = new Set<FilterName>(['none', 'autolevel', 'histeq', 'adaptive']);
 const POST_NORM_SKIP = new Set<FilterName>(['none', 'autolevel', 'histeq', 'satboost']);
 
-self.onmessage = (e: MessageEvent) => {
+if (typeof self !== 'undefined') self.onmessage = (e: MessageEvent) => {
   const { pixels, width, height, options, live } = e.data as {
     pixels: ArrayBuffer;
     width: number;
