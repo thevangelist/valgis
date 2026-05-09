@@ -3,7 +3,7 @@ import { Upload, Download, RotateCcw, Eye, EyeOff, Menu, X, ZoomIn, ZoomOut, Max
 import heic2any from 'heic2any';
 import UTIF from 'utif';
 import LibRaw from 'libraw-wasm';
-import { useImageProcessor } from './hooks/useImageProcessor';
+import { useImageProcessor, processOnce } from './hooks/useImageProcessor';
 import type { ProcessOptions } from './hooks/useImageProcessor';
 import type { HslBandKey, HslBandAdjustment, HslAdjustments, WheelValue, ColorWheelAdjustments } from './worker/imageProcessor';
 import { ColorWheel } from './components/ColorWheel';
@@ -211,6 +211,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
   const canvasRef         = useRef<HTMLCanvasElement>(null);
   const originalCanvasRef = useRef<HTMLCanvasElement>(null);
   const originalImageRef  = useRef<HTMLImageElement | null>(null);
+  const currentOptsRef    = useRef<ProcessOptions | null>(null);
 
   // ── Worker ──────────────────────────────────────────────────────────────────
 
@@ -259,8 +260,10 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
       postNormalize: toneEnabled ? postNormalize : 0,
     };
 
+    currentOptsRef.current = opts;
     setIsEditing(true);
-    process(origCanvas, opts);
+    const timer = setTimeout(() => process(origCanvas, opts), 150);
+    return () => clearTimeout(timer);
   }, [
     image, filter, brightness, contrast, saturation,
     shadowRecovery, highlightRecovery, clarity, dehaze,
@@ -285,12 +288,14 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
 
   // ── Image loading ────────────────────────────────────────────────────────────
 
+  const MAX_EDIT_PX = 1_500_000; // 1.5MP cap for live editing
   const loadImageToOriginalCanvas = (img: HTMLImageElement) => {
     const canvas = originalCanvasRef.current;
     if (!canvas) return;
-    canvas.width  = img.width;
-    canvas.height = img.height;
-    canvas.getContext('2d')!.drawImage(img, 0, 0);
+    const scale = Math.min(1, Math.sqrt(MAX_EDIT_PX / (img.width * img.height)));
+    canvas.width  = Math.round(img.width  * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
     originalImageRef.current = img;
     setImage(img);
     setImageDimensions({ width: img.width, height: img.height });
@@ -397,18 +402,32 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
 
   // ── Download ─────────────────────────────────────────────────────────────────
 
-  const downloadImage = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const downloadImage = async () => {
+    const origImg = originalImageRef.current;
+    const opts = currentOptsRef.current;
+    if (!origImg || !opts || !image) return;
     setIsDownloading(true);
-    const fmts = { jpeg:{mime:'image/jpeg',ext:'jpg',q:0.95}, png:{mime:'image/png',ext:'png',q:1}, webp:{mime:'image/webp',ext:'webp',q:0.95} };
-    const fmt  = fmts[originalFormat];
-    const ts   = new Date().toISOString().replace(/[:.]/g,'-').slice(0,-5);
-    const a    = document.createElement('a');
-    a.download  = `valgis-${filter}-${ts}.${fmt.ext}`;
-    a.href      = canvas.toDataURL(fmt.mime, fmt.q);
-    a.click();
-    setTimeout(() => setIsDownloading(false), 500);
+    try {
+      const fullCanvas = document.createElement('canvas');
+      fullCanvas.width  = origImg.naturalWidth;
+      fullCanvas.height = origImg.naturalHeight;
+      fullCanvas.getContext('2d')!.drawImage(origImg, 0, 0);
+      const imageData = fullCanvas.getContext('2d')!.getImageData(0, 0, fullCanvas.width, fullCanvas.height);
+      const result = await processOnce(imageData, opts);
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width  = result.width;
+      exportCanvas.height = result.height;
+      exportCanvas.getContext('2d')!.putImageData(result, 0, 0);
+      const fmts = { jpeg:{mime:'image/jpeg',ext:'jpg',q:0.95}, png:{mime:'image/png',ext:'png',q:1}, webp:{mime:'image/webp',ext:'webp',q:0.95} };
+      const fmt  = fmts[originalFormat];
+      const ts   = new Date().toISOString().replace(/[:.]/g,'-').slice(0,-5);
+      const a    = document.createElement('a');
+      a.download  = `valgis-${filter}-${ts}.${fmt.ext}`;
+      a.href      = exportCanvas.toDataURL(fmt.mime, fmt.q);
+      a.click();
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   // ── Lighting preset ──────────────────────────────────────────────────────────

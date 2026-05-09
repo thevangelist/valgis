@@ -3,6 +3,23 @@ import type { ProcessOptions } from '../worker/imageProcessor';
 
 export type { ProcessOptions };
 
+export function processOnce(imageData: ImageData, opts: ProcessOptions): Promise<ImageData> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(
+      new URL('../worker/imageProcessor', import.meta.url),
+      { type: 'module' },
+    );
+    worker.onmessage = (e: MessageEvent) => {
+      const { pixels, width, height } = e.data as { pixels: ArrayBuffer; width: number; height: number };
+      resolve(new ImageData(new Uint8ClampedArray(pixels), width, height));
+      worker.terminate();
+    };
+    worker.onerror = (e) => { reject(e); worker.terminate(); };
+    const buf = imageData.data.buffer.slice(0);
+    worker.postMessage({ pixels: buf, width: imageData.width, height: imageData.height, options: opts }, [buf]);
+  });
+}
+
 export function useImageProcessor(
   onResult: (imageData: ImageData) => void,
   onProcessingChange: (processing: boolean) => void,

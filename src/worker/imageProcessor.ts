@@ -109,6 +109,16 @@ function yuvToRgb(y: number, u: number, v: number): [number, number, number] {
 function rgbToRgb(r: number, g: number, b: number): [number, number, number] { return [r, g, b]; }
 function rgbFromRgb(r: number, g: number, b: number): [number, number, number] { return [r, g, b]; }
 
+function srgbToLinear(c: number): number {
+  const cn = c / 255;
+  return (cn <= 0.04045 ? cn / 12.92 : Math.pow((cn + 0.055) / 1.055, 2.4)) * 255;
+}
+
+function linearToSrgb(c: number): number {
+  const cn = c / 255;
+  return (cn <= 0.0031308 ? 12.92 * cn : 1.055 * Math.pow(Math.max(0, cn), 1 / 2.4) - 0.055) * 255;
+}
+
 // ─── Live-mode temporal smoothing state ──────────────────────────────────────
 //
 // Keyed by filter name. Only used when the worker receives { live: true }.
@@ -144,8 +154,20 @@ function decorrelationStretch(
   stretchFactor: number = 2.5,
   maxSamples: number = 100_000,
   liveKey: string | null = null,
+  linearize: boolean = true,
 ): void {
   const n = width * height;
+
+  // Convert sRGB → linear light before PCA so covariance reflects physical
+  // photon variance rather than gamma-warped display values.
+  // Lab filters skip this because rgbToLab already linearizes internally.
+  if (linearize) {
+    for (let i = 0; i < n; i++) {
+      data[i*4]   = srgbToLinear(data[i*4]);
+      data[i*4+1] = srgbToLinear(data[i*4+1]);
+      data[i*4+2] = srgbToLinear(data[i*4+2]);
+    }
+  }
 
   // Sample pixels for covariance (performance for large images)
   const step = Math.max(1, Math.floor(n / maxSamples));
@@ -311,6 +333,15 @@ function decorrelationStretch(
     data[i*4]   = Math.min(255, Math.max(0, Math.round((outR[i] - gMin) / gRange * 255)));
     data[i*4+1] = Math.min(255, Math.max(0, Math.round((outG[i] - gMin) / gRange * 255)));
     data[i*4+2] = Math.min(255, Math.max(0, Math.round((outB[i] - gMin) / gRange * 255)));
+  }
+
+  // Convert linear light back to sRGB gamma for display.
+  if (linearize) {
+    for (let i = 0; i < n; i++) {
+      data[i*4]   = Math.min(255, Math.max(0, Math.round(linearToSrgb(data[i*4]))));
+      data[i*4+1] = Math.min(255, Math.max(0, Math.round(linearToSrgb(data[i*4+1]))));
+      data[i*4+2] = Math.min(255, Math.max(0, Math.round(linearToSrgb(data[i*4+2]))));
+    }
   }
 }
 
@@ -525,13 +556,13 @@ function applyDecorrelationFilter(
     case 'ywe':  decorrelationStretch(data, width, height, rgbToYCbCr, yCbCrToRgb, 4.0, 100_000, lk); break;
     case 'ybr':  decorrelationStretch(data, width, height, rgbToYCbCr, yCbCrToRgb, 2.2, 100_000, lk); break;
     case 'yds':  decorrelationStretch(data, width, height, rgbToYCbCr, yCbCrToRgb, 3.0, 100_000, lk); break;
-    // LAB family
-    case 'lre':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 2.5, 100_000, lk); break;
-    case 'lrd':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 2.0, 100_000, lk); break;
-    case 'lbk':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 1.8, 100_000, lk); break;
-    case 'lye':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 3.5, 100_000, lk); break;
-    case 'lab':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 2.2, 100_000, lk); break;
-    case 'lab2': decorrelationStretch(data, width, height, rgbToLab, labToRgb, 3.5, 100_000, lk); break;
+    // LAB family — rgbToLab linearizes internally, skip outer linearization
+    case 'lre':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 2.5, 100_000, lk, false); break;
+    case 'lrd':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 2.0, 100_000, lk, false); break;
+    case 'lbk':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 1.8, 100_000, lk, false); break;
+    case 'lye':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 3.5, 100_000, lk, false); break;
+    case 'lab':  decorrelationStretch(data, width, height, rgbToLab, labToRgb, 2.2, 100_000, lk, false); break;
+    case 'lab2': decorrelationStretch(data, width, height, rgbToLab, labToRgb, 3.5, 100_000, lk, false); break;
     // RGB family
     case 'drgb': decorrelationStretch(data, width, height, rgbToRgb, rgbFromRgb, 2.5, 100_000, lk); break;
     case 'crgb': decorrelationStretch(data, width, height, rgbToRgb, rgbFromRgb, 3.0, 100_000, lk); break;
