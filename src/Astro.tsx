@@ -7,6 +7,7 @@ import { Slider } from '@/components/Slider';
 import { CollapsiblePanel } from '@/components/CollapsiblePanel';
 import { ChipGroup } from '@/components/ChipGroup';
 import { parseFits } from './lib/fits';
+import { decodeTiffPlanes } from './lib/tiff';
 import { decodeToImage, isSupportedImage, IMAGE_ACCEPT } from './lib/decode';
 import { UploadDrop } from '@/components/UploadDrop';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
@@ -34,6 +35,11 @@ async function decodeFile(file: File, onStatus: (m: string) => void): Promise<Fl
     onStatus('Reading FITS…');
     const f = parseFits(await file.arrayBuffer());
     return { ...f, name: file.name };
+  }
+  if (/\.tiff?$/i.test(file.name)) {
+    onStatus('Reading TIFF…');
+    const t = decodeTiffPlanes(await file.arrayBuffer());
+    return { width: t.width, height: t.height, channels: t.channels, name: file.name };
   }
   const img = await decodeToImage(file, onStatus);
   const cvs = document.createElement('canvas');
