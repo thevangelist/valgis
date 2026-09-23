@@ -69,3 +69,32 @@ describe('stretch', () => {
     expect(Array.from(out)).toEqual([0, 0, 0, 0, 0, 128, 0, 0, 0, 255, 0, 0]);
   });
 });
+
+import { bin2x2, subtractBackground, neutralizeBackground, scnr } from '../lib/astroTools';
+
+describe('astro tools', () => {
+  it('bin2x2 sums blocks', () => {
+    const p = new Float32Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    const r = bin2x2([p], 4, 4);
+    expect(r.width).toBe(2);
+    expect(Array.from(r.planes[0])).toEqual([14, 22, 46, 54]);
+  });
+  it('subtractBackground flattens a linear gradient', () => {
+    const w = 40, h = 40, p = new Float32Array(w * h);
+    for (let i = 0; i < p.length; i++) p[i] = 100 + (i % w) * 2 + Math.floor(i / w);
+    p[w * 20 + 20] = 5000;
+    const out = subtractBackground(p, w, h);
+    const st = channelStats(out);
+    expect(st.mad).toBeLessThan(1);
+    expect(out[w * 20 + 20]).toBeGreaterThan(4000);
+  });
+  it('neutralizeBackground equalises channel medians', () => {
+    const mk = (v: number) => new Float32Array(100).fill(v);
+    const out = neutralizeBackground([mk(10), mk(30), mk(20)]);
+    expect(out.map(p => p[0])).toEqual([20, 20, 20]);
+  });
+  it('scnr caps green at the red/blue mean', () => {
+    const out = scnr([new Float32Array([10]), new Float32Array([50]), new Float32Array([20])]);
+    expect(out[1][0]).toBe(15);
+  });
+});

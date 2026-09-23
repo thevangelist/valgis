@@ -23,7 +23,7 @@ export default function App() {
   };
 
   if (view === 'camera')  return <LiveCamera onBack={() => go('landing')} />;
-  if (view === 'desktop') return <Studio onBack={() => go('landing')} />;
-  if (view === 'astro')   return <Astro onBack={() => go('landing')} />;
-  return <Landing onDesktop={() => go('desktop')} onCamera={() => go('camera')} onAstro={() => go('astro')} />;
+  if (view === 'desktop') return <Studio onBack={() => go('landing')} onMode={() => go('astro')} />;
+  if (view === 'astro')   return <Astro onBack={() => go('landing')} onMode={() => go('desktop')} />;
+  return <Landing onDesktop={() => go('desktop')} onCamera={() => go('camera')} />;
 }

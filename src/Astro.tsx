@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Upload, Download, ChevronLeft, RotateCcw } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { StudioModeSwitch } from '@/components/StudioModeSwitch';
 import { Slider } from '@/components/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { parseFits } from './lib/fits';
 import { channelStats, autoStf, applyStretch } from './lib/stretch';
+import { bin2x2, subtractBackground, neutralizeBackground, scnr } from './lib/astroTools';
 import type { StretchKind, StfParams } from './lib/stretch';
 
 interface FloatImage { width: number; height: number; channels: Float32Array[]; name: string; }
@@ -35,25 +38,47 @@ async function decodeFile(file: File): Promise<FloatImage> {
   return { width: bmp.width, height: bmp.height, channels, name: file.name };
 }
 
-export default function Astro({ onBack }: { onBack: () => void }) {
+export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: () => void }) {
   const [image, setImage]     = useState<FloatImage | null>(null);
   const [kind, setKind]       = useState<StretchKind>('mtf');
   const [amount, setAmount]   = useState(30);
   const [target, setTarget]   = useState(25);
   const [shadowClip, setShadowClip] = useState(28);
   const [busy, setBusy]       = useState(false);
+  const [bin, setBin]         = useState(false);
+  const [background, setBackground] = useState(false);
+  const [neutralize, setNeutralize] = useState(false);
+  const [green, setGreen]     = useState(false);
+  const [linked, setLinked]   = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const stats = useMemo(() => image?.channels.map(c => channelStats(c)) ?? null, [image]);
+  // Linear-domain pipeline. Each step is optional and deterministic.
+  const processed = useMemo<FloatImage | null>(() => {
+    if (!image) return null;
+    let { width, height, channels } = image;
+    if (bin) ({ planes: channels, width, height } = bin2x2(channels, width, height));
+    if (background) channels = channels.map(c => subtractBackground(c, width, height));
+    if (neutralize) channels = neutralizeBackground(channels);
+    if (green) channels = scnr(channels);
+    return { ...image, width, height, channels };
+  }, [image, bin, background, neutralize, green]);
+
+  const stats = useMemo(() => processed?.channels.map(c => channelStats(c)) ?? null, [processed]);
 
   const stf: StfParams[] | null = useMemo(() => {
     if (!stats) return null;
-    return stats.map(st => autoStf(st, target / 100, -shadowClip / 10));
-  }, [stats, target, shadowClip]);
+    const per = stats.map(st => autoStf(st, target / 100, -shadowClip / 10));
+    if (!linked || per.length === 1) return per;
+    // Linked: one transfer for every channel, from the mean of the per-channel parameters.
+    const avg = (k: keyof StfParams) => per.reduce((a, p) => a + p[k], 0) / per.length;
+    const one = { shadow: avg('shadow'), highlight: avg('highlight'), midtone: avg('midtone') };
+    return per.map(() => one);
+  }, [stats, target, shadowClip, linked]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!image || !stf || !canvas) return;
+    if (!processed || !stf || !canvas) return;
+    const image = processed;
     const { width, height, channels } = image;
     canvas.width = width; canvas.height = height;
     const out = new Uint8ClampedArray(width * height * 4);
@@ -65,7 +90,7 @@ export default function Astro({ onBack }: { onBack: () => void }) {
     }
     for (let i = 3; i < out.length; i += 4) out[i] = 255;
     canvas.getContext('2d')!.putImageData(new ImageData(out, width, height), 0, 0);
-  }, [image, stf, kind, amount]);
+  }, [processed, stf, kind, amount]);
 
   const load = async (file: File) => {
     setBusy(true);
@@ -83,7 +108,7 @@ export default function Astro({ onBack }: { onBack: () => void }) {
     a.click();
   };
 
-  const reset = () => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); };
+  const reset = () => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); setBin(false); setBackground(false); setNeutralize(false); setGreen(false); setLinked(true); };
 
   return (
     <div className="h-screen bg-background text-foreground flex flex-col overflow-hidden">
@@ -93,7 +118,7 @@ export default function Astro({ onBack }: { onBack: () => void }) {
             <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Valgis" className="h-7 md:h-8" />
           </button>
           <Button variant="ghost" size="sm" onClick={onBack}><ChevronLeft size={16} /><span className="hidden md:inline">Home</span></Button>
-          <span className="text-xs uppercase tracking-wider text-zinc-400">Astro</span>
+          <StudioModeSwitch mode="astro" onChange={m => m === 'rockart' && onMode()} />
         </div>
         <div className="flex gap-2">
           {image && <Button variant="outline" onClick={reset} aria-label="Reset stretch"><RotateCcw size={14}/><span className="hidden lg:inline">Reset</span></Button>}
@@ -109,6 +134,16 @@ export default function Astro({ onBack }: { onBack: () => void }) {
             <input type="file" accept=".fits,.fit,.fts,image/*" className="hidden" onChange={e => e.target.files?.[0] && load(e.target.files[0])}/>
           </label>
 
+          <section className="bg-zinc-900 rounded-lg border border-zinc-700/60 p-3 space-y-2">
+            <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Linear</h2>
+            <Check label="2×2 bin" hint="Sum neighbours. SNR ×2, resolution ÷2." checked={bin} onChange={setBin}/>
+            <Check label="Background extraction" hint="Fit a surface to the sky and subtract it. Removes vignetting and gradients." checked={background} onChange={setBackground}/>
+            {(image?.channels.length ?? 0) >= 3 && <>
+              <Check label="Neutralize background" hint="Match channel medians. Removes sky colour cast." checked={neutralize} onChange={setNeutralize}/>
+              <Check label="SCNR green" hint="Green never exceeds the red/blue mean." checked={green} onChange={setGreen}/>
+            </>}
+          </section>
+
           <section className="bg-zinc-900 rounded-lg border border-zinc-700/60 p-3 space-y-2.5">
             <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Stretch</h2>
             <ToggleGroup value={[kind]} onValueChange={v => v.length && setKind(v[v.length - 1] as StretchKind)} className="flex flex-wrap gap-1">
@@ -121,6 +156,9 @@ export default function Astro({ onBack }: { onBack: () => void }) {
             </ToggleGroup>
             <p className="text-[11px] text-zinc-400 leading-snug">{KINDS.find(k => k.key === kind)?.desc}</p>
 
+            {(image?.channels.length ?? 0) >= 3 && (
+              <Check label="Linked channels" hint="One transfer for all channels keeps colour. Unlinked auto-balances." checked={linked} onChange={setLinked}/>
+            )}
             <Row label="Target brightness" value={`${target} %`}>
               <Slider min={5} max={60} value={[target]} onValueChange={([v]) => setTarget(v)} aria-label="Target brightness"/>
             </Row>
@@ -159,7 +197,16 @@ export default function Astro({ onBack }: { onBack: () => void }) {
   );
 }
 
-function Row({ label, value, children }: { label: string; value: string; children: React.ReactNode }) {
+function Check({ label, hint, checked, onChange }: { label: string; hint: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-start gap-2 cursor-pointer" title={hint}>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="mt-0.5 accent-cyan-400"/>
+      <span className="text-xs text-zinc-300 leading-snug">{label}<span className="block text-[10px] text-zinc-400">{hint}</span></span>
+    </label>
+  );
+}
+
+function Row({ label, value, children }: { label: string; value: string; children: ReactNode }) {
   return (
     <div>
       <div className="flex justify-between mb-1.5">

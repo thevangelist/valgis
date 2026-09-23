@@ -10,6 +10,7 @@ import { ColorWheel } from './components/ColorWheel';
 import { HueRangePicker } from './components/HueRangePicker';
 import { Slider as ShadSlider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
+import { StudioModeSwitch } from '@/components/StudioModeSwitch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -167,7 +168,7 @@ function CollapsiblePanel({
   );
 }
 
-const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
+const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void } = {}) => {
   const [filter,           setFilter          ] = useState<FilterName>('none');
   const [brightness,       setBrightness      ] = useState(100);
   const [contrast,         setContrast        ] = useState(100);
@@ -593,6 +594,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 <ChevronLeft size={16} /> <span className="hidden md:inline">Home</span>
               </Button>
             )}
+            {onMode && <StudioModeSwitch mode="rockart" onChange={m => m === 'astro' && onMode()} />}
           </div>
 
           {image && (

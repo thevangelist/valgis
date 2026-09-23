@@ -1,4 +1,4 @@
-import { Monitor, Camera, Star } from 'lucide-react';
+import { Monitor, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const BASE = import.meta.env.BASE_URL;
@@ -12,11 +12,9 @@ const GithubIcon = () => (
 export default function Landing({
   onDesktop,
   onCamera,
-  onAstro,
 }: {
   onDesktop: () => void;
   onCamera: () => void;
-  onAstro: () => void;
 }) {
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
@@ -62,18 +60,13 @@ export default function Landing({
         <div className="flex flex-col sm:flex-row gap-3">
           <Button variant="primary" size="lg" className="justify-start rounded-xl px-5 gap-3" onClick={onDesktop}>
             <Monitor className="w-4 h-4" />
-            Open Studio
-            <span className="text-black/50 font-normal ml-auto pl-4 hidden sm:block">Desktop</span>
+            Studio
+            <span className="text-black/50 font-normal ml-auto pl-4 hidden sm:block">Rock art · Astro</span>
           </Button>
           <Button variant="outline" size="lg" className="justify-start rounded-xl px-5 gap-3 border-zinc-800 bg-zinc-900 hover:bg-zinc-800" onClick={onCamera}>
             <Camera className="w-4 h-4" />
-            Open Camera
-            <span className="text-zinc-400 font-normal ml-auto pl-4 hidden sm:block">Fieldwork</span>
-          </Button>
-          <Button variant="outline" size="lg" className="justify-start rounded-xl px-5 gap-3 border-zinc-800 bg-zinc-900 hover:bg-zinc-800" onClick={onAstro}>
-            <Star className="w-4 h-4" />
-            Open Astro
-            <span className="text-zinc-400 font-normal ml-auto pl-4 hidden sm:block">Telescope</span>
+            Field Camera
+            <span className="text-zinc-400 font-normal ml-auto pl-4 hidden sm:block">Phone</span>
           </Button>
         </div>
 
