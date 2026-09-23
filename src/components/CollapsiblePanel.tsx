@@ -19,13 +19,13 @@ export function CollapsiblePanel({
   useEffect(() => { localStorage.setItem(storageKey, open ? '1' : '0'); }, [storageKey, open]);
 
   return (
-    <div className="bg-zinc-900 rounded-lg border border-zinc-700/60 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border/60 overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-zinc-800/50 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-secondary/50 transition-colors"
       >
-        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">{title}</span>
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{title}</span>
         <div className="flex items-center gap-2">
           {onEnabledChange !== undefined && (
             <span

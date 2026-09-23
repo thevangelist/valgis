@@ -2,7 +2,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 export interface Chip<K extends string> { key: K; label: string; title?: string; }
 
-const CHIP = "h-6 px-2 text-xs font-medium rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors";
+const CHIP = "h-6 px-2 text-xs font-medium rounded-md border border-border bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground aria-pressed:bg-accent aria-pressed:border-zinc-500 aria-pressed:text-foreground transition-colors";
 
 type Props<K extends string> =
   | { chips: Chip<K>[]; value: K; onChange: (k: K) => void; multiple?: false; className?: string }

@@ -1,11 +1,15 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Upload, Download, ChevronLeft, RotateCcw } from 'lucide-react';
+import { Upload, Download, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { StudioModeSwitch } from '@/components/StudioModeSwitch';
+import { StudioShell, InfoBar, EmptyState } from '@/components/studio/StudioShell';
+import { StudioHeader } from '@/components/studio/StudioHeader';
 import { Slider } from '@/components/Slider';
 import { CollapsiblePanel } from '@/components/CollapsiblePanel';
 import { ChipGroup } from '@/components/ChipGroup';
 import { parseFits } from './lib/fits';
+import { decodeToImage, isSupportedImage, IMAGE_ACCEPT } from './lib/decode';
+import { UploadDrop } from '@/components/UploadDrop';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { channelStats, autoStf, applyStretch } from './lib/stretch';
 import { bin2x2, subtractBackground, neutralizeBackground, scnr } from './lib/astroTools';
 import type { StretchKind, StfParams } from './lib/stretch';
@@ -21,23 +25,29 @@ const KINDS: { key: StretchKind; label: string; desc: string }[] = [
   { key: 'log',    label: 'Log',    desc: 'Stronger lift for very faint targets.' },
 ];
 
-async function decodeFile(file: File): Promise<FloatImage> {
-  if (/\.fits?$/i.test(file.name)) {
+const FITS_EXT = /\.(fits?|fts)$/i;
+const ASTRO_ACCEPT = `.fits,.fit,.fts,${IMAGE_ACCEPT}`;
+const isAstroFile = (f: File) => FITS_EXT.test(f.name) || isSupportedImage(f);
+
+async function decodeFile(file: File, onStatus: (m: string) => void): Promise<FloatImage> {
+  if (FITS_EXT.test(file.name)) {
+    onStatus('Reading FITS…');
     const f = parseFits(await file.arrayBuffer());
     return { ...f, name: file.name };
   }
-  const bmp = await createImageBitmap(file);
-  const cvs = new OffscreenCanvas(bmp.width, bmp.height);
+  const img = await decodeToImage(file, onStatus);
+  const cvs = document.createElement('canvas');
+  cvs.width = img.naturalWidth; cvs.height = img.naturalHeight;
   const ctx = cvs.getContext('2d')!;
-  ctx.drawImage(bmp, 0, 0);
-  const { data } = ctx.getImageData(0, 0, bmp.width, bmp.height);
-  const n = bmp.width * bmp.height;
+  ctx.drawImage(img, 0, 0);
+  const { data } = ctx.getImageData(0, 0, cvs.width, cvs.height);
+  const n = cvs.width * cvs.height;
   const channels = [0, 1, 2].map(c => {
     const p = new Float32Array(n);
     for (let i = 0; i < n; i++) p[i] = data[i * 4 + c];
     return p;
   });
-  return { width: bmp.width, height: bmp.height, channels, name: file.name };
+  return { width: cvs.width, height: cvs.height, channels, name: file.name };
 }
 
 export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: () => void }) {
@@ -46,9 +56,10 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
   const [amount, setAmount]   = useState(30);
   const [target, setTarget]   = useState(25);
   const [shadowClip, setShadowClip] = useState(28);
-  const [busy, setBusy]       = useState(false);
+  const [busy, setBusy]       = useState('');
   const [tools, setTools]     = useState<LinearTool[]>([]);
   const [linked, setLinked]   = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Linear-domain pipeline. Each step is optional and deterministic.
@@ -93,10 +104,10 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
   }, [processed, stf, kind, amount]);
 
   const load = async (file: File) => {
-    setBusy(true);
-    try { setImage(await decodeFile(file)); }
+    setBusy('Loading…');
+    try { setImage(await decodeFile(file, setBusy)); }
     catch (e) { alert(`Could not read ${file.name}: ${(e as Error).message}`); }
-    finally { setBusy(false); }
+    finally { setBusy(''); }
   };
 
   const download = () => {
@@ -110,83 +121,76 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
 
   const reset = () => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); setTools([]); setLinked(true); };
 
-  return (
-    <div className="h-screen bg-background text-foreground flex flex-col overflow-hidden">
-      <header className="bg-black border-b border-zinc-800 px-3 md:px-6 py-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 md:gap-4">
-          <button onClick={onBack} className="flex items-center rounded-md" aria-label="Back to home">
-            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Valgis" className="h-7 md:h-8" />
-          </button>
-          <Button variant="ghost" size="sm" onClick={onBack}><ChevronLeft size={16} /><span className="hidden md:inline">Home</span></Button>
-          <StudioModeSwitch mode="astro" onChange={m => m === 'rockart' && onMode()} />
-        </div>
-        <div className="flex gap-2">
-          {image && <Button variant="outline" onClick={reset} aria-label="Reset stretch"><RotateCcw size={14}/><span className="hidden lg:inline">Reset</span></Button>}
-          <Button variant="primary" onClick={download} disabled={!image}><Download size={14}/><span className="hidden sm:inline">Download</span></Button>
-        </div>
-      </header>
+  const header = (
+    <StudioHeader
+      mode="astro" onMode={m => m === 'rockart' && onMode()} onBack={onBack}
+      sidebarOpen={sidebarOpen} onSidebarToggle={() => setSidebarOpen(o => !o)}
+      actions={<>
+        {image && <Button variant="outline" onClick={reset} aria-label="Reset stretch"><RotateCcw size={14}/><span className="hidden lg:inline">Reset</span></Button>}
+        <Button variant="primary" onClick={download} disabled={!image}><Download size={14}/><span className="hidden sm:inline">Download</span></Button>
+      </>}
+    />
+  );
 
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-80 bg-zinc-900 border-r border-zinc-800 overflow-y-auto p-3 space-y-3">
-          <label className={`flex flex-col items-center justify-center w-full px-3 py-4 bg-zinc-800 rounded-lg border-2 border-dashed border-zinc-700 hover:border-primary cursor-pointer transition ${busy ? 'opacity-50' : ''}`}>
-            <Upload size={20} className="mb-1.5"/>
-            <span className="text-[11px]">{busy ? 'Reading…' : 'Open FITS, TIFF, PNG or JPEG'}</span>
-            <input type="file" accept=".fits,.fit,.fts,image/*" className="hidden" onChange={e => e.target.files?.[0] && load(e.target.files[0])}/>
-          </label>
+  const sidebar = (
+    <>
+      <UploadDrop accept={ASTRO_ACCEPT} isSupported={isAstroFile} onFile={load} label="Upload or Drop FITS / Image"/>
 
-          <CollapsiblePanel id="astro-linear" title="Linear">
-            <ChipGroup<LinearTool> multiple
-              chips={[
-                { key: 'bin' as const, label: '2×2 bin', title: 'Sum neighbours. SNR ×2, resolution ÷2.' },
-                { key: 'background' as const, label: 'Background', title: 'Fit a surface to the sky and subtract it. Removes vignetting and gradients.' },
-                ...((image?.channels.length ?? 0) >= 3 ? [
-                  { key: 'neutralize' as const, label: 'Neutralize', title: 'Match channel medians. Removes sky colour cast.' },
-                  { key: 'scnr' as const, label: 'SCNR', title: 'Green never exceeds the red/blue mean.' },
-                ] : []),
-              ]}
-              value={tools} onChange={(v: LinearTool[]) => setTools(v)}
-            />
-          </CollapsiblePanel>
+      <CollapsiblePanel id="astro-linear" title="Linear">
+        <ChipGroup<LinearTool> multiple
+          chips={[
+            { key: 'bin' as const, label: '2×2 bin', title: 'Sum neighbours. SNR ×2, resolution ÷2.' },
+            { key: 'background' as const, label: 'Background', title: 'Fit a surface to the sky and subtract it. Removes vignetting and gradients.' },
+            ...((image?.channels.length ?? 0) >= 3 ? [
+              { key: 'neutralize' as const, label: 'Neutralize', title: 'Match channel medians. Removes sky colour cast.' },
+              { key: 'scnr' as const, label: 'SCNR', title: 'Green never exceeds the red/blue mean.' },
+            ] : []),
+          ]}
+          value={tools} onChange={(v: LinearTool[]) => setTools(v)}
+        />
+      </CollapsiblePanel>
 
-          <CollapsiblePanel id="astro-stretch" title="Stretch">
-            <div className="space-y-2.5">
-              <ChipGroup chips={KINDS.map(k => ({ key: k.key, label: k.label, title: k.desc }))} value={kind} onChange={setKind} />
-              <p className="text-[11px] text-zinc-400 leading-snug">{KINDS.find(k => k.key === kind)?.desc}</p>
-              {(image?.channels.length ?? 0) >= 3 && (
-                <ChipGroup chips={[{ key: 'linked', label: 'Linked', title: 'One transfer for all channels keeps colour.' }, { key: 'unlinked', label: 'Unlinked', title: 'Per-channel transfer. Auto colour balance.' }]}
-                  value={linked ? 'linked' : 'unlinked'} onChange={v => setLinked(v === 'linked')} />
-              )}
-              <Slider label="Target brightness" value={target} min={5} max={60} defaultVal={25} onChange={setTarget} title="Where the median lands, in percent of white."/>
-              <Slider label="Shadow clip (×0.1 σ)" value={shadowClip} min={0} max={50} defaultVal={28} onChange={setShadowClip} title="Black point below the median, in tenths of a sigma."/>
-              {(kind === 'asinh' || kind === 'log') && (
-                <Slider label="Strength" value={amount} min={1} max={500} defaultVal={30} onChange={setAmount}/>
-              )}
-            </div>
-          </CollapsiblePanel>
-
-          {image && stats && (
-            <CollapsiblePanel id="astro-info" title="Image" defaultOpen={false}>
-              <div className="space-y-1 text-[11px] text-zinc-400 tabular-nums">
-                <div>{image.width} × {image.height} px, {image.channels.length === 1 ? 'mono' : `${image.channels.length} ch`}</div>
-                {stats.map((st, i) => (
-                  <div key={i}>ch{i}: median {fmt(st.median)}, MAD {fmt(st.mad)}, range {fmt(st.min)}–{fmt(st.max)}</div>
-                ))}
-              </div>
-            </CollapsiblePanel>
+      <CollapsiblePanel id="astro-stretch" title="Stretch">
+        <div className="space-y-2.5">
+          <ChipGroup chips={KINDS.map(k => ({ key: k.key, label: k.label, title: k.desc }))} value={kind} onChange={setKind} />
+          <p className="text-[11px] text-muted-foreground leading-snug">{KINDS.find(k => k.key === kind)?.desc}</p>
+          {(image?.channels.length ?? 0) >= 3 && (
+            <ChipGroup chips={[{ key: 'linked', label: 'Linked', title: 'One transfer for all channels keeps colour.' }, { key: 'unlinked', label: 'Unlinked', title: 'Per-channel transfer. Auto colour balance.' }]}
+              value={linked ? 'linked' : 'unlinked'} onChange={v => setLinked(v === 'linked')} />
           )}
-        </aside>
+          <Slider label="Target brightness" value={target} min={5} max={60} defaultVal={25} onChange={setTarget} title="Where the median lands, in percent of white."/>
+          <Slider label="Shadow clip (×0.1 σ)" value={shadowClip} min={0} max={50} defaultVal={28} onChange={setShadowClip} title="Black point below the median, in tenths of a sigma."/>
+          {(kind === 'asinh' || kind === 'log') && (
+            <Slider label="Strength" value={amount} min={1} max={500} defaultVal={30} onChange={setAmount}/>
+          )}
+        </div>
+      </CollapsiblePanel>
 
-        <main className="flex-1 flex items-center justify-center p-4 overflow-hidden bg-black">
-          {image
-            ? <canvas ref={canvasRef} className="max-w-full max-h-full object-contain border border-zinc-800" />
-            : <div className="text-center text-zinc-400">
-                <Upload size={64} className="mx-auto mb-4 opacity-30"/>
-                <p className="text-lg mb-2">Open a FITS frame to begin</p>
-                <p className="text-sm">Linear data in, honest stretch out. Nothing is reconstructed.</p>
-              </div>}
-        </main>
+      {image && stats && (
+        <CollapsiblePanel id="astro-info" title="Image" defaultOpen={false}>
+          <div className="space-y-1 text-[11px] text-muted-foreground tabular-nums">
+            {stats.map((st, i) => (
+              <div key={i}>ch{i}: median {fmt(st.median)}, MAD {fmt(st.mad)}, range {fmt(st.min)}–{fmt(st.max)}</div>
+            ))}
+          </div>
+        </CollapsiblePanel>
+      )}
+    </>
+  );
+
+  return (
+    <StudioShell header={header} sidebar={sidebar} sidebarOpen={sidebarOpen} onSidebarClose={() => setSidebarOpen(false)}
+      overlay={busy && <LoadingOverlay message={busy}/>}>
+      {processed && (
+        <InfoBar left={`${processed.width} × ${processed.height} px · ${processed.channels.length === 1 ? 'mono' : `${processed.channels.length} ch`}`}
+          right={<span className="text-foreground font-medium">{KINDS.find(k => k.key === kind)?.label}</span>}/>
+      )}
+      <div className="flex-1 flex items-center justify-center p-4 overflow-hidden">
+        {image
+          ? <canvas ref={canvasRef} className="max-w-full max-h-full object-contain border border-border shadow-2xl" />
+          : <EmptyState icon={<Upload size={64}/>} title="Open a FITS frame or a photo to begin" hint="Linear data in, honest stretch out. Nothing is reconstructed."/>}
       </div>
-    </div>
+    </StudioShell>
   );
 }
 

@@ -1,8 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Download, RotateCcw, Eye, Menu, X, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, ChevronLeft, Palette } from 'lucide-react';
-import heic2any from 'heic2any';
-import UTIF from 'utif';
-import LibRaw from 'libraw-wasm';
+import { Upload, Download, RotateCcw, Eye, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, Palette } from 'lucide-react';
 import { useImageProcessor, processOnce } from './hooks/useImageProcessor';
 import type { ProcessOptions } from './hooks/useImageProcessor';
 import type { HslBandKey, HslBandAdjustment, HslAdjustments, WheelValue, ColorWheelAdjustments } from './worker/imageProcessor';
@@ -12,8 +9,12 @@ import { Slider as ShadSlider } from '@/components/ui/slider';
 import { Slider } from '@/components/Slider';
 import { CollapsiblePanel } from '@/components/CollapsiblePanel';
 import { ChipGroup } from '@/components/ChipGroup';
+import { UploadDrop } from '@/components/UploadDrop';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
+import { decodeToImage, exportFormatOf, isSupportedImage, IMAGE_ACCEPT } from '@/lib/decode';
 import { Button } from '@/components/ui/button';
-import { StudioModeSwitch } from '@/components/StudioModeSwitch';
+import { StudioShell, InfoBar, EmptyState } from '@/components/studio/StudioShell';
+import { StudioHeader, HeaderOptionGroup } from '@/components/studio/StudioHeader';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -121,7 +122,7 @@ Object.entries(filterGroups).forEach(([, g]) =>
   Object.entries(g.filters).forEach(([k, f]) => { filterMeta[k] = { ...f, group: g.title }; })
 );
 
-const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void } = {}) => {
+const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) => {
   const [filter,           setFilter          ] = useState<FilterName>('none');
   const [brightness,       setBrightness      ] = useState(100);
   const [contrast,         setContrast        ] = useState(100);
@@ -142,7 +143,6 @@ const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void }
   const [image,            setImage           ] = useState<HTMLImageElement | null>(null);
   const [imageDimensions,  setImageDimensions ] = useState<{width:number;height:number}|null>(null);
   const [originalFormat,   setOriginalFormat  ] = useState<'jpeg'|'png'|'webp'>('png');
-  const [isDragging,       setIsDragging      ] = useState(false);
   const [showOriginal,     setShowOriginal    ] = useState(false);
   const [isProcessing,     setIsProcessing    ] = useState(false);
   const [processingMessage,setProcessingMessage] = useState('');
@@ -263,101 +263,15 @@ const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void }
 
   const processImageFile = async (file: File) => {
     setIsProcessing(true);
-    setProcessingMessage('Loading image...');
-
-    setOriginalFormat(
-      file.type === 'image/jpeg' || /\.(jpg|jpeg)$/i.test(file.name) ? 'jpeg' :
-      file.type === 'image/webp' || /\.webp$/i.test(file.name)       ? 'webp' : 'png',
-    );
-
-    let fileToProcess = file;
-
-    if (/\.(heic|heif)$/i.test(file.name) || /heic|heif/.test(file.type)) {
-      try {
-        setProcessingMessage('Converting HEIC image...');
-        const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 1 });
-        fileToProcess = new File(
-          [Array.isArray(blob) ? blob[0] : blob],
-          file.name.replace(/\.heic$/i, '.jpg'),
-          { type: 'image/jpeg' },
-        );
-      } catch {
-        alert('Failed to convert HEIC image.');
-        setIsProcessing(false); setProcessingMessage(''); return;
-      }
+    setOriginalFormat(exportFormatOf(file));
+    try {
+      loadImageToOriginalCanvas(await decodeToImage(file, setProcessingMessage));
+    } catch (err) {
+      console.error(err);
+      alert(`Could not open ${file.name}. The format may not be supported.`);
+    } finally {
+      setIsProcessing(false); setProcessingMessage('');
     }
-
-    if (/\.(tiff?|tif)$/i.test(file.name) || /tiff?/.test(file.type)) {
-      try {
-        setProcessingMessage('Converting TIFF image...');
-        const buf = await file.arrayBuffer();
-        const ifds = UTIF.decode(buf);
-        UTIF.decodeImage(buf, ifds[0]);
-        const rgba = UTIF.toRGBA8(ifds[0]);
-        const cvs  = document.createElement('canvas');
-        cvs.width  = ifds[0].width;
-        cvs.height = ifds[0].height;
-        const id   = cvs.getContext('2d')!.createImageData(cvs.width, cvs.height);
-        id.data.set(rgba);
-        cvs.getContext('2d')!.putImageData(id, 0, 0);
-        const tblob = await new Promise<Blob>((res, rej) => cvs.toBlob(b => b ? res(b) : rej(), 'image/png'));
-        fileToProcess = new File([tblob], file.name.replace(/\.tiff?$/i, '.png'), { type: 'image/png' });
-      } catch {
-        alert('Failed to convert TIFF image.');
-        setIsProcessing(false); setProcessingMessage(''); return;
-      }
-    }
-
-    const RAW_EXT = /\.(cr2|cr3|nef|nrw|arw|srf|sr2|dng|orf|rw2|rwl|pef|ptx|raf|3fr|fff|iiq|cap|mef|mos|mrw|raw|rw1|srw|x3f)$/i;
-    if (RAW_EXT.test(file.name)) {
-      try {
-        setProcessingMessage('Decoding RAW file…');
-        const buf = await file.arrayBuffer();
-        const libraw = new LibRaw();
-        await libraw.open(new Uint8Array(buf), { useCameraWb: true, outputColor: 1, outputBps: 8, userQual: 3 });
-        const meta = await libraw.metadata();
-        const rgb  = await libraw.imageData() as Uint8Array;
-        const W = meta.width as number;
-        const H = meta.height as number;
-        const rgba = new Uint8ClampedArray(W * H * 4);
-        for (let i = 0; i < W * H; i++) {
-          rgba[i * 4]     = rgb[i * 3];
-          rgba[i * 4 + 1] = rgb[i * 3 + 1];
-          rgba[i * 4 + 2] = rgb[i * 3 + 2];
-          rgba[i * 4 + 3] = 255;
-        }
-        const cvs = document.createElement('canvas');
-        cvs.width = W; cvs.height = H;
-        cvs.getContext('2d')!.putImageData(new ImageData(rgba, W, H), 0, 0);
-        const rblob = await new Promise<Blob>((res, rej) => cvs.toBlob(b => b ? res(b) : rej(), 'image/png'));
-        fileToProcess = new File([rblob], file.name.replace(RAW_EXT, '.png'), { type: 'image/png' });
-      } catch (err) {
-        console.error(err);
-        alert('Failed to decode RAW file. The format may not be supported.');
-        setIsProcessing(false); setProcessingMessage(''); return;
-      }
-    }
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload  = () => { loadImageToOriginalCanvas(img); setIsProcessing(false); setProcessingMessage(''); };
-      img.onerror = () => { alert('Failed to load image.'); setIsProcessing(false); setProcessingMessage(''); };
-      img.src = ev.target!.result as string;
-    };
-    reader.onerror = () => { alert('Failed to read file.'); setIsProcessing(false); setProcessingMessage(''); };
-    reader.readAsDataURL(fileToProcess);
-  };
-
-  // ── Drag & Drop ──────────────────────────────────────────────────────────────
-
-  const handleDragOver  = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
-  const handleDrop      = (e: React.DragEvent) => {
-    e.preventDefault(); setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && (file.type.startsWith('image/') || /\.(heic|heif|tiff?|cr2|cr3|nef|nrw|arw|srf|sr2|dng|orf|rw2|rwl|pef|ptx|raf|3fr|fff|iiq|mef|mrw|raw|srw|x3f)$/i.test(file.name)))
-      processImageFile(file);
   };
 
   // ── Download ─────────────────────────────────────────────────────────────────
@@ -472,507 +386,439 @@ const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void }
   // Render
   // ─────────────────────────────────────────────────────────────────────────────
 
-  return (
-    <div className="h-screen bg-background text-foreground flex flex-col overflow-hidden">
-      {/* Header */}
-      <header className="bg-black border-b border-zinc-800 px-3 md:px-6 py-3">
-        <div className="flex items-center justify-between gap-2 md:gap-4">
-          <div className="flex items-center gap-2 md:gap-4">
-            <Button variant="outline" size="icon" className="md:hidden" onClick={() => setSidebarOpen(o => !o)}
-              aria-label={sidebarOpen ? 'Close panel' : 'Open panel'} aria-expanded={sidebarOpen}>
-              {sidebarOpen ? <X size={18}/> : <Menu size={18}/>}
+  const header = (
+    <StudioHeader
+      mode="rockart" onMode={m => m === 'astro' && onMode()} onBack={onBack}
+      sidebarOpen={sidebarOpen} onSidebarToggle={() => setSidebarOpen(o => !o)}
+      center={image && (
+        <HeaderOptionGroup label="Render" value={renderingMode} onChange={setRenderingMode}
+          options={[{ key: 'smooth', label: 'Smooth' }, { key: 'crisp', label: 'Crisp' }, { key: 'pixelated', label: 'Pixel' }]}/>
+      )}
+      actions={<>
+        {image && (
+          <>
+            <Button variant="outline" active={colorSidebarOpen} aria-pressed={colorSidebarOpen} className="hidden md:inline-flex"
+              onClick={() => setColorSidebarOpen(o => !o)} title="Color Mixer">
+              <Palette size={14}/>
+              <span className="hidden lg:inline">Color</span>
             </Button>
-            <button onClick={onBack} className="flex items-center rounded-md" aria-label="Back to home">
-              <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Valgis" className="h-7 md:h-8" />
-            </button>
-            {onBack && (
-              <Button variant="ghost" size="sm" onClick={onBack}>
-                <ChevronLeft size={16} /> <span className="hidden md:inline">Home</span>
-              </Button>
-            )}
-            {onMode && <StudioModeSwitch mode="rockart" onChange={m => m === 'astro' && onMode()} />}
-          </div>
-
-          {image && (
-            <div className="hidden md:flex items-center gap-1 bg-zinc-900 rounded-md p-1 border border-zinc-700" role="group" aria-label="Canvas rendering">
-              <span className="text-xs text-zinc-400 px-1">Render:</span>
-              {(['smooth','crisp','pixelated'] as const).map(m => (
-                <Button key={m} variant="ghost" size="sm" active={renderingMode===m} aria-pressed={renderingMode===m} onClick={() => setRenderingMode(m)}>
-                  {m.charAt(0).toUpperCase()+m.slice(1,m==='pixelated'?5:undefined)}
-                </Button>
-              ))}
+            <div className="flex items-center rounded-md border border-border divide-x divide-border overflow-hidden" role="group" aria-label="Zoom">
+              <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={() => setZoom(z => Math.max(z/1.25,0.1))} aria-label="Zoom out"><ZoomOut size={14}/></Button>
+              <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} aria-label="Fit to screen"><Maximize2 size={14}/></Button>
+              <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={handleZoom100} aria-label="Zoom to 100 %"><Maximize size={14}/></Button>
+              <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={() => setZoom(z => Math.min(z*1.25,10))} aria-label="Zoom in"><ZoomIn size={14}/></Button>
+              <span className="hidden md:inline text-xs text-muted-foreground px-2 min-w-[3rem] text-center tabular-nums" aria-live="polite">{Math.round(zoom*100)}%</span>
             </div>
-          )}
-
-          <div className="flex gap-1 md:gap-2">
-            {image && (
-              <>
-                <Button variant="outline" active={colorSidebarOpen} aria-pressed={colorSidebarOpen} className="hidden md:inline-flex"
-                  onClick={() => setColorSidebarOpen(o => !o)} title="Color Mixer">
-                  <Palette size={14}/>
-                  <span className="hidden lg:inline">Color</span>
-                </Button>
-                <div className="flex items-center rounded-md border border-border divide-x divide-border overflow-hidden" role="group" aria-label="Zoom">
-                  <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={() => setZoom(z => Math.max(z/1.25,0.1))} aria-label="Zoom out"><ZoomOut size={14}/></Button>
-                  <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} aria-label="Fit to screen"><Maximize2 size={14}/></Button>
-                  <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={handleZoom100} aria-label="Zoom to 100 %"><Maximize size={14}/></Button>
-                  <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={() => setZoom(z => Math.min(z*1.25,10))} aria-label="Zoom in"><ZoomIn size={14}/></Button>
-                  <span className="hidden md:inline text-xs text-zinc-400 px-2 min-w-[3rem] text-center tabular-nums" aria-live="polite">{Math.round(zoom*100)}%</span>
-                </div>
-                <Button variant="outline" active={showOriginal} aria-pressed={showOriginal} onClick={() => setShowOriginal(s => !s)}>
-                  <Eye size={14}/>
-                  <span className="hidden sm:inline">{showOriginal ? 'Edited' : 'Original'}</span>
-                </Button>
-                <Button variant="outline" onClick={resetSettings} aria-label="Reset all adjustments">
-                  <RotateCcw size={14}/><span className="hidden lg:inline">Reset</span>
-                </Button>
-              </>
-            )}
-            <Button variant="primary" onClick={downloadImage} disabled={!image||isDownloading}>
-              <Download size={14} className={isDownloading?'animate-bounce':''}/>
-              <span className="hidden sm:inline">{isDownloading?'Saving...':'Download'}</span>
+            <Button variant="outline" active={showOriginal} aria-pressed={showOriginal} onClick={() => setShowOriginal(s => !s)}>
+              <Eye size={14}/>
+              <span className="hidden sm:inline">{showOriginal ? 'Edited' : 'Original'}</span>
             </Button>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Sidebar */}
-        <div className={`${sidebarOpen?'translate-x-0':'-translate-x-full'} md:translate-x-0 fixed md:relative z-20 w-80 bg-zinc-800 border-r border-zinc-700 flex flex-col overflow-hidden h-full transition-transform duration-300`}>
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-2.5 md:p-3 space-y-2">
-
-              {/* Upload */}
-              <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                className={`flex items-center justify-center w-full px-3 py-4 bg-zinc-700 rounded-lg border-2 border-dashed cursor-pointer transition ${isDragging?'border-primary bg-primary/10':'border-zinc-600 hover:border-primary'}`}>
-                <label className="cursor-pointer text-center w-full">
-                  <Upload className="mx-auto mb-1.5" size={20}/>
-                  <span className="text-[11px] block">{isDragging?'Drop image here':'Upload or Drop Image'}</span>
-                  <input type="file" accept="image/png,image/jpeg,image/tiff,image/heic,image/heif,image/webp,.png,.jpg,.jpeg,.tiff,.tif,.heic,.heif,.cr2,.cr3,.nef,.nrw,.arw,.srf,.sr2,.dng,.orf,.rw2,.rwl,.pef,.ptx,.raf,.3fr,.fff,.iiq,.mef,.mrw,.raw,.srw,.x3f"
-                    onChange={e => e.target.files?.[0] && processImageFile(e.target.files[0])} className="hidden"/>
-                </label>
-              </div>
-
-              {/* ── Lighting preset ── */}
-              <CollapsiblePanel
-                id="lighting"
-                title="Lighting Conditions"
-                headerExtra={<span className="text-[11px] text-zinc-400">sets sliders below</span>}
-              >
-                <Select value={lightingPreset} onValueChange={v => v && applyLightingPreset(v)}>
-                  <SelectTrigger className="w-full bg-zinc-700 border-zinc-600 text-zinc-200 text-xs h-8">
-                    <SelectValue>{lightingPresets[lightingPreset as keyof typeof lightingPresets].name}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(lightingPresets).map(([k, p]) => (
-                      <SelectItem key={k} value={k}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {lightingPreset !== 'none' && (
-                  <p className="text-xs text-zinc-400 mt-1.5 leading-tight">{lightingPresets[lightingPreset as keyof typeof lightingPresets].desc}</p>
-                )}
-              </CollapsiblePanel>
-
-              {/* ── Spectral filters ── */}
-              <CollapsiblePanel id="spectral" title="Spectral Filter">
-                <div className="space-y-2.5">
-                  {Object.entries(filterGroups).map(([gk, group]) => (
-                    <div key={gk}>
-                      <span className="block text-[11px] text-zinc-400 mb-1">{group.title}</span>
-                      <ChipGroup
-                        chips={Object.entries(group.filters).map(([k, f]) => ({ key: k as FilterName, label: f.name, title: f.desc }))}
-                        value={filter} onChange={setFilter}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </CollapsiblePanel>
-
-              {/* ── Tone ── */}
-              <CollapsiblePanel
-                id="tone"
-                title="Tone"
-                enabled={toneEnabled}
-                onEnabledChange={setToneEnabled}
-              >
-                <div className="space-y-2.5">
-                  <span className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-widest pt-0.5">Exposure</span>
-                  <Slider label="Brightness" value={brightness}  min={0} max={200} defaultVal={100} onChange={setBrightness}
-                    gradient="linear-gradient(to right, #111 0%, #666 50%, #fff 100%)"/>
-                  <Slider label="Contrast"   value={contrast}    min={0} max={200} defaultVal={100} onChange={setContrast}
-                    gradient="linear-gradient(to right, hsl(0,0%,50%) 0%, hsla(0,0%,50%,0) 100%), repeating-linear-gradient(to right, #0a0a0a 0 3px, #f0f0f0 3px 6px)"/>
-                  <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}
-                    gradient="linear-gradient(to right, hsl(0,0%,45%) 0%, hsl(0,0%,55%) 50%, hsl(14,70%,55%) 100%)"/>
-                  <div className="flex items-center gap-2 pt-1">
-                    <div className="flex-1 border-t border-zinc-700/60"/>
-                    <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Normalize</span>
-                    <div className="flex-1 border-t border-zinc-700/60"/>
-                  </div>
-                  <Slider label="Pre-filter"  value={preNormalize}  min={0} max={100} defaultVal={100} onChange={setPreNormalize}
-                    gradient="linear-gradient(to right, hsl(210,35%,40%) 0%, hsl(0,0%,50%) 40%, hsl(30,30%,55%) 100%)"/>
-                  <Slider label="Post-filter" value={postNormalize} min={0} max={100} defaultVal={100} onChange={setPostNormalize}
-                    gradient="linear-gradient(to right, hsl(0,0%,20%) 0%, hsl(0,0%,55%) 50%, hsl(0,0%,92%) 100%)"/>
-                </div>
-              </CollapsiblePanel>
-
-              {/* ── Enhancement ── */}
-              <CollapsiblePanel id="enhancement" title="Enhancement"
-                enabled={enhancementEnabled} onEnabledChange={setEnhancementEnabled}>
-                <div className="space-y-2.5">
-                  <Slider label="Shadow Recovery"    value={shadowRecovery}    min={0} max={100} defaultVal={0} onChange={setShadowRecovery}
-                    gradient="linear-gradient(to right, #0a0a0a 0%, hsl(30,15%,40%) 100%)"/>
-                  <Slider label="Highlight Recovery" value={highlightRecovery} min={0} max={100} defaultVal={0} onChange={setHighlightRecovery}
-                    gradient="linear-gradient(to right, #f8f8f8 0%, hsl(40,15%,60%) 100%)"/>
-                  <Slider label="Clarity"            value={clarity}           min={0} max={100} defaultVal={0} onChange={setClarity}
-                    gradient="linear-gradient(to right, hsl(0,0%,50%) 0%, hsla(0,0%,50%,0) 100%), repeating-linear-gradient(to right, #222 0 2px, #ddd 2px 4px)"/>
-                  <Slider label="Dehaze"             value={dehaze}            min={0} max={100} defaultVal={0} onChange={setDehaze}
-                    gradient="linear-gradient(to right, hsl(210,20%,55%) 0%, hsl(30,10%,35%) 100%)"/>
-                </div>
-              </CollapsiblePanel>
-
-              {/* ── Detail ── */}
-              <CollapsiblePanel id="detail" title="Detail"
-                enabled={detailEnabled} onEnabledChange={setDetailEnabled}>
-                <div className="space-y-3">
-                  {/* Noise Reduction */}
-                  <span className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-widest pt-0.5">Noise</span>
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-medium text-zinc-300">Noise Reduction</span>
-                      <span className="flex items-center gap-1 text-xs text-zinc-400">
-                        {noiseReduction}%
-                        {noiseReduction !== 0 && <button onClick={() => setNoiseReduction(0)} className="text-zinc-400 hover:text-zinc-300"><RefreshCw size={10}/></button>}
-                      </span>
-                    </div>
-                    <ShadSlider min={0} max={100} value={[noiseReduction]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setNoiseReduction(v as number); }} className="w-full mb-2"
-                      trackGradient="linear-gradient(to right, hsl(0,0%,55%) 0%, hsl(220,12%,50%) 100%)"/>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
-                      <ChipGroup
-                        chips={(['median','gaussian','bilateral'] as const).map(m => ({ key: m, label: m[0].toUpperCase() + m.slice(1) }))}
-                        value={noiseAlgorithm} onChange={setNoiseAlgorithm} className="flex gap-1"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 border-t border-zinc-700/60"/>
-                    <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Sharpen</span>
-                    <div className="flex-1 border-t border-zinc-700/60"/>
-                  </div>
-                  {/* Sharpening */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-medium text-zinc-300">Sharpening</span>
-                      <span className="flex items-center gap-1 text-xs text-zinc-400">
-                        {sharpening}%
-                        {sharpening !== 0 && <button onClick={() => setSharpening(0)} className="text-zinc-400 hover:text-zinc-300"><RefreshCw size={10}/></button>}
-                      </span>
-                    </div>
-                    <ShadSlider min={0} max={100} value={[sharpening]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setSharpening(v as number); }} className="w-full mb-2"
-                      trackGradient="linear-gradient(to right, hsl(0,0%,35%) 0%, hsl(0,0%,88%) 100%)"/>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
-                      <ChipGroup
-                        chips={(['unsharp','highpass','laplacian'] as const).map(m => ({ key: m, label: m[0].toUpperCase() + m.slice(1) }))}
-                        value={sharpenAlgorithm} onChange={setSharpenAlgorithm} className="flex gap-1"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </CollapsiblePanel>
-
-              {/* Histogram */}
-              {histogram && (() => {
-                const lum = histogram.r.map((_, i) =>
-                  Math.round(0.299 * histogram.r[i] + 0.587 * histogram.g[i] + 0.114 * histogram.b[i])
-                );
-                const gMax = Math.max(
-                  ...histogram.r, ...histogram.g, ...histogram.b, ...lum
-                ) || 1;
-                const pts = (vals: number[]) =>
-                  `0,64 ${vals.map((v, i) => `${i},${64 - (v / gMax) * 64}`).join(' ')} 255,64`;
-                return (
-                  <CollapsiblePanel id="histogram" title="Histogram" defaultOpen={false}>
-                    <div className="relative h-20 bg-zinc-950 rounded overflow-hidden">
-                      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 256 64" preserveAspectRatio="none">
-                        {/* luminance */}
-                        <polyline fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" strokeWidth="0.5" points={pts(lum)}/>
-                        {/* R G B */}
-                        <polyline fill="rgba(239,68,68,0.25)"  stroke="rgba(239,68,68,0.7)"  strokeWidth="0.5" points={pts(histogram.r)}/>
-                        <polyline fill="rgba(34,197,94,0.25)"  stroke="rgba(34,197,94,0.7)"  strokeWidth="0.5" points={pts(histogram.g)}/>
-                        <polyline fill="rgba(96,165,250,0.25)" stroke="rgba(96,165,250,0.7)" strokeWidth="0.5" points={pts(histogram.b)}/>
-                      </svg>
-                    </div>
-                    <div className="flex gap-3 mt-1.5">
-                      {(['R','G','B'] as const).map((ch, i) => {
-                        const vals = [histogram.r, histogram.g, histogram.b][i];
-                        const total = vals.reduce((a, v) => a + v, 0) || 1;
-                        const mean = Math.round(vals.reduce((a, v, j) => a + v * j, 0) / total);
-                        const colors = ['text-red-400','text-green-400','text-primary'];
-                        return (
-                          <span key={ch} className={`text-[11px] ${colors[i]}`}>{ch} {mean}</span>
-                        );
-                      })}
-                    </div>
-                  </CollapsiblePanel>
-                );
-              })()}
-
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile overlay */}
-        {sidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-10 md:hidden" onClick={() => setSidebarOpen(false)}/>}
-
-        {/* Loading overlay */}
-        {isProcessing && (
-          <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center">
-            <div className="bg-zinc-800 rounded-lg p-8 flex flex-col items-center gap-4 border border-zinc-700">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"/>
-              <p className="text-white text-lg">{processingMessage}</p>
-            </div>
-          </div>
+            <Button variant="outline" onClick={resetSettings} aria-label="Reset all adjustments">
+              <RotateCcw size={14}/><span className="hidden lg:inline">Reset</span>
+            </Button>
+          </>
         )}
+        <Button variant="primary" onClick={downloadImage} disabled={!image||isDownloading}>
+          <Download size={14} className={isDownloading?'animate-bounce':''}/>
+          <span className="hidden sm:inline">{isDownloading?'Saving...':'Download'}</span>
+        </Button>
+      </>}
+    />
+  );
 
-        {/* Main canvas */}
-        <div className="flex-1 bg-zinc-900 flex flex-col overflow-hidden">
-          {imageDimensions && (
-            <div className="bg-zinc-800 border-b border-zinc-700 px-4 py-2 text-xs text-zinc-400 flex items-center justify-between">
-              <span>{imageDimensions.width} × {imageDimensions.height} px</span>
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-200 font-medium">{filterMeta[filter]?.name ?? 'Original'}</span>
-                {filterMeta[filter] && <>
-                  <span className="text-zinc-600">·</span>
-                  <span className="text-zinc-400">{filterMeta[filter].group}</span>
-                </>}
-              </div>
+  const sidebar = (
+    <>
+      <UploadDrop accept={IMAGE_ACCEPT} isSupported={isSupportedImage} onFile={processImageFile}/>
+
+      {/* ── Lighting preset ── */}
+      <CollapsiblePanel
+        id="lighting"
+        title="Lighting Conditions"
+        headerExtra={<span className="text-[11px] text-zinc-400">sets sliders below</span>}
+      >
+        <Select value={lightingPreset} onValueChange={v => v && applyLightingPreset(v)}>
+          <SelectTrigger className="w-full bg-secondary border-border text-foreground text-xs h-8">
+            <SelectValue>{lightingPresets[lightingPreset as keyof typeof lightingPresets].name}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(lightingPresets).map(([k, p]) => (
+              <SelectItem key={k} value={k}>{p.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {lightingPreset !== 'none' && (
+          <p className="text-xs text-zinc-400 mt-1.5 leading-tight">{lightingPresets[lightingPreset as keyof typeof lightingPresets].desc}</p>
+        )}
+      </CollapsiblePanel>
+
+      {/* ── Spectral filters ── */}
+      <CollapsiblePanel id="spectral" title="Spectral Filter">
+        <div className="space-y-2.5">
+          {Object.entries(filterGroups).map(([gk, group]) => (
+            <div key={gk}>
+              <span className="block text-[11px] text-zinc-400 mb-1">{group.title}</span>
+              <ChipGroup
+                chips={Object.entries(group.filters).map(([k, f]) => ({ key: k as FilterName, label: f.name, title: f.desc }))}
+                value={filter} onChange={setFilter}
+              />
             </div>
-          )}
+          ))}
+        </div>
+      </CollapsiblePanel>
 
-          <div ref={viewportRef} className="flex-1 flex items-center justify-center p-4 overflow-hidden"
-            onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
-            style={{ cursor: isPanning ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}>
-            {!image ? (
-              <div className="text-center text-zinc-400">
-                <Upload size={64} className="mx-auto mb-4 opacity-30"/>
-                <p className="text-lg mb-2">Upload an image to begin</p>
-                <p className="text-sm text-zinc-400">Astronomy · Rock art · Archaeology · Natural science</p>
-              </div>
-            ) : (
-              <div className="relative max-w-full max-h-full flex items-center justify-center"
-                style={{ transform:`scale(${zoom}) translate(${panX/zoom}px,${panY/zoom}px)`, transformOrigin:'center center', transition:isPanning?'none':'transform 0.1s ease-out' }}>
-                <canvas ref={canvasRef} className="border border-zinc-700 shadow-2xl"
-                  style={{ maxWidth:'100%', maxHeight:'calc(100vh - 120px)', objectFit:'contain', pointerEvents:'none',
-                    imageRendering: renderingMode==='smooth'?'auto':renderingMode==='crisp'?'crisp-edges':'pixelated' }}/>
-                {isEditing && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded">
-                    <div className="flex flex-col items-center gap-2">
-                      <svg className="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                      </svg>
-                      <span className="text-sm text-white font-medium">Processing…</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+      {/* ── Tone ── */}
+      <CollapsiblePanel
+        id="tone"
+        title="Tone"
+        enabled={toneEnabled}
+        onEnabledChange={setToneEnabled}
+      >
+        <div className="space-y-2.5">
+          <span className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-widest pt-0.5">Exposure</span>
+          <Slider label="Brightness" value={brightness}  min={0} max={200} defaultVal={100} onChange={setBrightness}
+            gradient="linear-gradient(to right, #111 0%, #666 50%, #fff 100%)"/>
+          <Slider label="Contrast"   value={contrast}    min={0} max={200} defaultVal={100} onChange={setContrast}
+            gradient="linear-gradient(to right, hsl(0,0%,50%) 0%, hsla(0,0%,50%,0) 100%), repeating-linear-gradient(to right, #0a0a0a 0 3px, #f0f0f0 3px 6px)"/>
+          <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}
+            gradient="linear-gradient(to right, hsl(0,0%,45%) 0%, hsl(0,0%,55%) 50%, hsl(14,70%,55%) 100%)"/>
+          <div className="flex items-center gap-2 pt-1">
+            <div className="flex-1 border-t border-zinc-700/60"/>
+            <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Normalize</span>
+            <div className="flex-1 border-t border-zinc-700/60"/>
+          </div>
+          <Slider label="Pre-filter"  value={preNormalize}  min={0} max={100} defaultVal={100} onChange={setPreNormalize}
+            gradient="linear-gradient(to right, hsl(210,35%,40%) 0%, hsl(0,0%,50%) 40%, hsl(30,30%,55%) 100%)"/>
+          <Slider label="Post-filter" value={postNormalize} min={0} max={100} defaultVal={100} onChange={setPostNormalize}
+            gradient="linear-gradient(to right, hsl(0,0%,20%) 0%, hsl(0,0%,55%) 50%, hsl(0,0%,92%) 100%)"/>
+        </div>
+      </CollapsiblePanel>
+
+      {/* ── Enhancement ── */}
+      <CollapsiblePanel id="enhancement" title="Enhancement"
+        enabled={enhancementEnabled} onEnabledChange={setEnhancementEnabled}>
+        <div className="space-y-2.5">
+          <Slider label="Shadow Recovery"    value={shadowRecovery}    min={0} max={100} defaultVal={0} onChange={setShadowRecovery}
+            gradient="linear-gradient(to right, #0a0a0a 0%, hsl(30,15%,40%) 100%)"/>
+          <Slider label="Highlight Recovery" value={highlightRecovery} min={0} max={100} defaultVal={0} onChange={setHighlightRecovery}
+            gradient="linear-gradient(to right, #f8f8f8 0%, hsl(40,15%,60%) 100%)"/>
+          <Slider label="Clarity"            value={clarity}           min={0} max={100} defaultVal={0} onChange={setClarity}
+            gradient="linear-gradient(to right, hsl(0,0%,50%) 0%, hsla(0,0%,50%,0) 100%), repeating-linear-gradient(to right, #222 0 2px, #ddd 2px 4px)"/>
+          <Slider label="Dehaze"             value={dehaze}            min={0} max={100} defaultVal={0} onChange={setDehaze}
+            gradient="linear-gradient(to right, hsl(210,20%,55%) 0%, hsl(30,10%,35%) 100%)"/>
+        </div>
+      </CollapsiblePanel>
+
+      {/* ── Detail ── */}
+      <CollapsiblePanel id="detail" title="Detail"
+        enabled={detailEnabled} onEnabledChange={setDetailEnabled}>
+        <div className="space-y-3">
+          {/* Noise Reduction */}
+          <span className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-widest pt-0.5">Noise</span>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium text-zinc-300">Noise Reduction</span>
+              <span className="flex items-center gap-1 text-xs text-zinc-400">
+                {noiseReduction}%
+                {noiseReduction !== 0 && <button onClick={() => setNoiseReduction(0)} className="text-zinc-400 hover:text-zinc-300"><RefreshCw size={10}/></button>}
+              </span>
+            </div>
+            <ShadSlider min={0} max={100} value={[noiseReduction]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setNoiseReduction(v as number); }} className="w-full mb-2"
+              trackGradient="linear-gradient(to right, hsl(0,0%,55%) 0%, hsl(220,12%,50%) 100%)"/>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
+              <ChipGroup
+                chips={(['median','gaussian','bilateral'] as const).map(m => ({ key: m, label: m[0].toUpperCase() + m.slice(1) }))}
+                value={noiseAlgorithm} onChange={setNoiseAlgorithm} className="flex gap-1"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 border-t border-zinc-700/60"/>
+            <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Sharpen</span>
+            <div className="flex-1 border-t border-zinc-700/60"/>
+          </div>
+          {/* Sharpening */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium text-zinc-300">Sharpening</span>
+              <span className="flex items-center gap-1 text-xs text-zinc-400">
+                {sharpening}%
+                {sharpening !== 0 && <button onClick={() => setSharpening(0)} className="text-zinc-400 hover:text-zinc-300"><RefreshCw size={10}/></button>}
+              </span>
+            </div>
+            <ShadSlider min={0} max={100} value={[sharpening]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setSharpening(v as number); }} className="w-full mb-2"
+              trackGradient="linear-gradient(to right, hsl(0,0%,35%) 0%, hsl(0,0%,88%) 100%)"/>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
+              <ChipGroup
+                chips={(['unsharp','highpass','laplacian'] as const).map(m => ({ key: m, label: m[0].toUpperCase() + m.slice(1) }))}
+                value={sharpenAlgorithm} onChange={setSharpenAlgorithm} className="flex gap-1"
+              />
+            </div>
           </div>
         </div>
+      </CollapsiblePanel>
 
-        {/* ── Color sidebar (right) ───────────────────────────────────── */}
-        {colorSidebarOpen && image && (
-          <div className="hidden md:flex flex-col w-64 bg-zinc-800 border-l border-zinc-700 shrink-0">
+      {/* Histogram */}
+      {histogram && (() => {
+        const lum = histogram.r.map((_, i) =>
+          Math.round(0.299 * histogram.r[i] + 0.587 * histogram.g[i] + 0.114 * histogram.b[i])
+        );
+        const gMax = Math.max(
+          ...histogram.r, ...histogram.g, ...histogram.b, ...lum
+        ) || 1;
+        const pts = (vals: number[]) =>
+          `0,64 ${vals.map((v, i) => `${i},${64 - (v / gMax) * 64}`).join(' ')} 255,64`;
+        return (
+          <CollapsiblePanel id="histogram" title="Histogram" defaultOpen={false}>
+            <div className="relative h-20 bg-zinc-950 rounded overflow-hidden">
+              <svg className="absolute inset-0 w-full h-full" viewBox="0 0 256 64" preserveAspectRatio="none">
+                {/* luminance */}
+                <polyline fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" strokeWidth="0.5" points={pts(lum)}/>
+                {/* R G B */}
+                <polyline fill="rgba(239,68,68,0.25)"  stroke="rgba(239,68,68,0.7)"  strokeWidth="0.5" points={pts(histogram.r)}/>
+                <polyline fill="rgba(34,197,94,0.25)"  stroke="rgba(34,197,94,0.7)"  strokeWidth="0.5" points={pts(histogram.g)}/>
+                <polyline fill="rgba(96,165,250,0.25)" stroke="rgba(96,165,250,0.7)" strokeWidth="0.5" points={pts(histogram.b)}/>
+              </svg>
+            </div>
+            <div className="flex gap-3 mt-1.5">
+              {(['R','G','B'] as const).map((ch, i) => {
+                const vals = [histogram.r, histogram.g, histogram.b][i];
+                const total = vals.reduce((a, v) => a + v, 0) || 1;
+                const mean = Math.round(vals.reduce((a, v, j) => a + v * j, 0) / total);
+                const colors = ['text-red-400','text-green-400','text-primary'];
+                return (
+                  <span key={ch} className={`text-[11px] ${colors[i]}`}>{ch} {mean}</span>
+                );
+              })}
+            </div>
+          </CollapsiblePanel>
+        );
+      })()}
 
-            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+    </>
+  );
 
-              {/* ── Color Wheels panel ── */}
-              <CollapsiblePanel id="wheels" title="Color Wheels">
-                <div className="space-y-4">
-                  {([
-                    { key: 'lift'  as const, label: 'Shadows'    },
-                    { key: 'gamma' as const, label: 'Midtones'   },
-                    { key: 'gain'  as const, label: 'Highlights' },
-                  ]).map(({ key, label }) => {
-                    const w = colorWheels[key];
-                    const active = isWheelActive(w);
-                    return (
-                      <div key={key} className={`rounded-lg p-3 border transition-colors ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-zinc-700/60 bg-zinc-900'}`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className={`text-xs font-semibold uppercase tracking-wider ${active ? 'text-primary' : 'text-zinc-400'}`}>{label}</span>
-                          {active && (
-                            <button
-                              onClick={() => updateWheel(key, { x: 0, y: 0, luma: 0 })}
-                              className="text-[10px] text-zinc-400 hover:text-red-400 flex items-center gap-0.5 transition-colors"
-                            >
-                              <RefreshCw size={9}/> Reset
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="flex gap-3 items-start">
-                          {/* Wheel */}
-                          <ColorWheel
-                            label=""
-                            size={72}
-                            value={{ x: w.x, y: w.y }}
-                            onChange={({ x, y }) => updateWheel(key, { x, y })}
-                          />
-
-                          {/* Luma slider + readouts */}
-                          <div className="flex-1 pt-1 space-y-2">
-                            <div>
-                              <div className="flex justify-between mb-1">
-                                <span className="text-[10px] text-zinc-400">Luma</span>
-                                <span className="text-[10px] text-zinc-400 tabular-nums">
-                                  {w.luma > 0 ? '+' : ''}{w.luma}
-                                </span>
-                              </div>
-                              <ShadSlider
-                                min={-100} max={100} value={[w.luma]}
-                                onValueChange={([v]) => updateWheel(key, { luma: v })}
-                                className="w-full"
-                              />
-                            </div>
-                            {(w.x !== 0 || w.y !== 0) && (
-                              <div className="text-[10px] text-zinc-400 tabular-nums">
-                                x {w.x.toFixed(2)}  y {w.y.toFixed(2)}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {(isWheelActive(colorWheels.lift) || isWheelActive(colorWheels.gamma) || isWheelActive(colorWheels.gain)) && (
+  const rightSidebar = colorSidebarOpen && image && (
+    <>
+      {/* ── Color Wheels panel ── */}
+      <CollapsiblePanel id="wheels" title="Color Wheels">
+        <div className="space-y-4">
+          {([
+            { key: 'lift'  as const, label: 'Shadows'    },
+            { key: 'gamma' as const, label: 'Midtones'   },
+            { key: 'gain'  as const, label: 'Highlights' },
+          ]).map(({ key, label }) => {
+            const w = colorWheels[key];
+            const active = isWheelActive(w);
+            return (
+              <div key={key} className={`rounded-lg p-3 border transition-colors ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-zinc-700/60 bg-zinc-900'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-xs font-semibold uppercase tracking-wider ${active ? 'text-primary' : 'text-zinc-400'}`}>{label}</span>
+                  {active && (
                     <button
-                      onClick={() => setColorWheels({ lift: {x:0,y:0,luma:0}, gamma: {x:0,y:0,luma:0}, gain: {x:0,y:0,luma:0} })}
-                      className="w-full text-[10px] text-zinc-400 hover:text-red-400 transition-colors py-1"
+                      onClick={() => updateWheel(key, { x: 0, y: 0, luma: 0 })}
+                      className="text-[10px] text-zinc-400 hover:text-red-400 flex items-center gap-0.5 transition-colors"
                     >
-                      Reset all wheels
+                      <RefreshCw size={9}/> Reset
                     </button>
                   )}
-
-                  <p className="text-[10px] text-zinc-400 leading-snug">
-                    Drag wheels to push color into shadows, midtones, or highlights. Double-click a wheel to reset it.
-                  </p>
                 </div>
-              </CollapsiblePanel>
 
-              {/* ── HSL panel ── */}
-              <CollapsiblePanel id="hsl" title="HSL" defaultOpen={false}>
-                <div className="space-y-3">
-                  {/* Band swatches */}
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {HSL_BANDS.map(band => (
-                      <button
-                        key={band.key}
-                        onClick={() => setSelectedBand(band.key)}
-                        title={band.label}
-                        className="relative rounded-md h-8 flex items-center justify-center text-[10px] font-semibold transition-all"
-                        style={{
-                          background: band.color,
-                          color: band.textColor,
-                          outline: selectedBand === band.key ? '2px solid white' : 'none',
-                          outlineOffset: '1px',
-                          opacity: isBandActive(band.key) ? 1 : 0.5,
-                        }}
-                      >
-                        {band.label.slice(0, 3)}
-                        {isBandActive(band.key) && (
-                          <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-white opacity-90"/>
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                <div className="flex gap-3 items-start">
+                  {/* Wheel */}
+                  <ColorWheel
+                    label=""
+                    size={72}
+                    value={{ x: w.x, y: w.y }}
+                    onChange={({ x, y }) => updateWheel(key, { x, y })}
+                  />
 
-                  {(() => {
-                    const band  = HSL_BANDS.find(b => b.key === selectedBand)!;
-                    const adj   = hslAdjustments[selectedBand];
-                    const active = isBandActive(selectedBand);
-                    return (
-                      <div className={`rounded-lg p-3 border space-y-2.5 ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-zinc-700/60 bg-zinc-900'}`}>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium" style={{ color: band.color }}>{band.label}</span>
-                          {active && (
-                            <button
-                              onClick={() => setHslAdjustments(prev => ({ ...prev, [selectedBand]: defaultBand(selectedBand) }))}
-                              className="text-[10px] text-zinc-400 hover:text-red-400 flex items-center gap-0.5 transition-colors"
-                            >
-                              <RefreshCw size={9}/> Reset
-                            </button>
-                          )}
-                        </div>
-                        {/* Hue range picker */}
-                        <HueRangePicker
-                          center={adj.center}
-                          halfWidth={adj.halfWidth}
-                          onChange={(c, hw) => setHslAdjustments(prev => ({
-                            ...prev,
-                            [selectedBand]: { ...prev[selectedBand], center: c, halfWidth: hw },
-                          }))}
-                        />
-
-                        <div className="border-t border-zinc-700/60"/>
-
-                        {([
-                          { field: 'hue'        as const, label: 'Hue Shift',  min: -180, max: 180, unit: '°' },
-                          { field: 'saturation' as const, label: 'Saturation', min: -100, max: 100, unit: ''  },
-                          { field: 'lightness'  as const, label: 'Lightness',  min: -100, max: 100, unit: ''  },
-                        ]).map(({ field, label: fl, min, max, unit }) => (
-                          <div key={field}>
-                            <div className="flex justify-between mb-1">
-                              <span className="text-xs text-zinc-300">{fl}</span>
-                              <span className="text-xs text-zinc-400 tabular-nums">
-                                {adj[field] > 0 ? '+' : ''}{adj[field]}{unit}
-                              </span>
-                            </div>
-                            <ShadSlider
-                              min={min} max={max} value={[adj[field]]}
-                              onValueChange={([v]) => updateBand(selectedBand, field, v)}
-                              className="w-full"
-                            />
-                          </div>
-                        ))}
+                  {/* Luma slider + readouts */}
+                  <div className="flex-1 pt-1 space-y-2">
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-[10px] text-zinc-400">Luma</span>
+                        <span className="text-[10px] text-zinc-400 tabular-nums">
+                          {w.luma > 0 ? '+' : ''}{w.luma}
+                        </span>
                       </div>
-                    );
-                  })()}
-
-                  {HSL_BANDS.some(b => isBandActive(b.key)) && (
-                    <div className="border-t border-zinc-700 pt-2">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] text-zinc-400 uppercase tracking-wide">Active</span>
-                        <button
-                          onClick={() => setHslAdjustments(defaultHslAdjustments())}
-                          className="text-[10px] text-zinc-400 hover:text-red-400 transition-colors"
-                        >
-                          Reset all
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {HSL_BANDS.filter(b => isBandActive(b.key)).map(b => (
-                          <span key={b.key} className="text-[10px] px-1.5 py-0.5 rounded"
-                            style={{ background: b.color + '33', color: b.color, border: `1px solid ${b.color}44` }}>
-                            {b.label.slice(0, 3)}
-                          </span>
-                        ))}
-                      </div>
+                      <ShadSlider
+                        min={-100} max={100} value={[w.luma]}
+                        onValueChange={([v]) => updateWheel(key, { luma: v })}
+                        className="w-full"
+                      />
                     </div>
+                    {(w.x !== 0 || w.y !== 0) && (
+                      <div className="text-[10px] text-zinc-400 tabular-nums">
+                        x {w.x.toFixed(2)}  y {w.y.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {(isWheelActive(colorWheels.lift) || isWheelActive(colorWheels.gamma) || isWheelActive(colorWheels.gain)) && (
+            <button
+              onClick={() => setColorWheels({ lift: {x:0,y:0,luma:0}, gamma: {x:0,y:0,luma:0}, gain: {x:0,y:0,luma:0} })}
+              className="w-full text-[10px] text-zinc-400 hover:text-red-400 transition-colors py-1"
+            >
+              Reset all wheels
+            </button>
+          )}
+
+          <p className="text-[10px] text-zinc-400 leading-snug">
+            Drag wheels to push color into shadows, midtones, or highlights. Double-click a wheel to reset it.
+          </p>
+        </div>
+      </CollapsiblePanel>
+
+      {/* ── HSL panel ── */}
+      <CollapsiblePanel id="hsl" title="HSL" defaultOpen={false}>
+        <div className="space-y-3">
+          {/* Band swatches */}
+          <div className="grid grid-cols-4 gap-1.5">
+            {HSL_BANDS.map(band => (
+              <button
+                key={band.key}
+                onClick={() => setSelectedBand(band.key)}
+                title={band.label}
+                className="relative rounded-md h-8 flex items-center justify-center text-[10px] font-semibold transition-all"
+                style={{
+                  background: band.color,
+                  color: band.textColor,
+                  outline: selectedBand === band.key ? '2px solid white' : 'none',
+                  outlineOffset: '1px',
+                  opacity: isBandActive(band.key) ? 1 : 0.5,
+                }}
+              >
+                {band.label.slice(0, 3)}
+                {isBandActive(band.key) && (
+                  <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-white opacity-90"/>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {(() => {
+            const band  = HSL_BANDS.find(b => b.key === selectedBand)!;
+            const adj   = hslAdjustments[selectedBand];
+            const active = isBandActive(selectedBand);
+            return (
+              <div className={`rounded-lg p-3 border space-y-2.5 ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-zinc-700/60 bg-zinc-900'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium" style={{ color: band.color }}>{band.label}</span>
+                  {active && (
+                    <button
+                      onClick={() => setHslAdjustments(prev => ({ ...prev, [selectedBand]: defaultBand(selectedBand) }))}
+                      className="text-[10px] text-zinc-400 hover:text-red-400 flex items-center gap-0.5 transition-colors"
+                    >
+                      <RefreshCw size={9}/> Reset
+                    </button>
                   )}
                 </div>
-              </CollapsiblePanel>
+                {/* Hue range picker */}
+                <HueRangePicker
+                  center={adj.center}
+                  halfWidth={adj.halfWidth}
+                  onChange={(c, hw) => setHslAdjustments(prev => ({
+                    ...prev,
+                    [selectedBand]: { ...prev[selectedBand], center: c, halfWidth: hw },
+                  }))}
+                />
 
+                <div className="border-t border-zinc-700/60"/>
+
+                {([
+                  { field: 'hue'        as const, label: 'Hue Shift',  min: -180, max: 180, unit: '°' },
+                  { field: 'saturation' as const, label: 'Saturation', min: -100, max: 100, unit: ''  },
+                  { field: 'lightness'  as const, label: 'Lightness',  min: -100, max: 100, unit: ''  },
+                ]).map(({ field, label: fl, min, max, unit }) => (
+                  <div key={field}>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-xs text-zinc-300">{fl}</span>
+                      <span className="text-xs text-zinc-400 tabular-nums">
+                        {adj[field] > 0 ? '+' : ''}{adj[field]}{unit}
+                      </span>
+                    </div>
+                    <ShadSlider
+                      min={min} max={max} value={[adj[field]]}
+                      onValueChange={([v]) => updateBand(selectedBand, field, v)}
+                      className="w-full"
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {HSL_BANDS.some(b => isBandActive(b.key)) && (
+            <div className="border-t border-zinc-700 pt-2">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] text-zinc-400 uppercase tracking-wide">Active</span>
+                <button
+                  onClick={() => setHslAdjustments(defaultHslAdjustments())}
+                  className="text-[10px] text-zinc-400 hover:text-red-400 transition-colors"
+                >
+                  Reset all
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {HSL_BANDS.filter(b => isBandActive(b.key)).map(b => (
+                  <span key={b.key} className="text-[10px] px-1.5 py-0.5 rounded"
+                    style={{ background: b.color + '33', color: b.color, border: `1px solid ${b.color}44` }}>
+                    {b.label.slice(0, 3)}
+                  </span>
+                ))}
+              </div>
             </div>
+          )}
+        </div>
+      </CollapsiblePanel>
+
+    </>
+  );
+
+  return (
+    <StudioShell header={header} sidebar={sidebar} sidebarOpen={sidebarOpen} onSidebarClose={() => setSidebarOpen(false)}
+      rightSidebar={rightSidebar} overlay={isProcessing && <LoadingOverlay message={processingMessage}/>}>
+      {imageDimensions && (
+        <InfoBar left={`${imageDimensions.width} × ${imageDimensions.height} px`}
+          right={<>
+            <span className="text-foreground font-medium">{filterMeta[filter]?.name ?? 'Original'}</span>
+            {filterMeta[filter] && <><span className="text-zinc-600">·</span><span>{filterMeta[filter].group}</span></>}
+          </>}/>
+      )}
+      <div ref={viewportRef} className="flex-1 flex items-center justify-center p-4 overflow-hidden"
+        onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
+        style={{ cursor: isPanning ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}>
+        {!image ? (
+          <EmptyState icon={<Upload size={64}/>} title="Upload an image to begin" hint="Rock art · Archaeology · Natural science"/>
+        ) : (
+          <div className="relative max-w-full max-h-full flex items-center justify-center"
+            style={{ transform:`scale(${zoom}) translate(${panX/zoom}px,${panY/zoom}px)`, transformOrigin:'center center', transition:isPanning?'none':'transform 0.1s ease-out' }}>
+            <canvas ref={canvasRef} className="border border-border shadow-2xl"
+              style={{ maxWidth:'100%', maxHeight:'calc(100vh - 120px)', objectFit:'contain', pointerEvents:'none',
+                imageRendering: renderingMode==='smooth'?'auto':renderingMode==='crisp'?'crisp-edges':'pixelated' }}/>
+            {isEditing && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded">
+                <div className="flex flex-col items-center gap-2">
+                  <svg className="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                  </svg>
+                  <span className="text-sm text-white font-medium">Processing…</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
-
       <canvas ref={originalCanvasRef} className="hidden"/>
-    </div>
+    </StudioShell>
   );
 };
 
