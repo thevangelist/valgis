@@ -10,9 +10,10 @@ type SliderProps = {
   className?: string
   disabled?: boolean
   trackGradient?: string
+  "aria-label"?: string
 }
 
-function Slider({ min = 0, max = 100, value, defaultValue, onValueChange, className, disabled, trackGradient }: SliderProps) {
+function Slider({ min = 0, max = 100, value, defaultValue, onValueChange, className, disabled, trackGradient, "aria-label": ariaLabel }: SliderProps) {
   const controlled = value !== undefined
   const [internal, setInternal] = React.useState(defaultValue?.[0] ?? min)
   const current = controlled ? (value?.[0] ?? min) : internal
@@ -30,9 +31,9 @@ function Slider({ min = 0, max = 100, value, defaultValue, onValueChange, classN
       {trackGradient ? (
         <div className="relative w-full h-1.5 rounded-full overflow-visible" style={{ background: trackGradient }}/>
       ) : (
-        <div className="relative w-full h-1.5 rounded-full bg-gray-600 overflow-visible">
+        <div className="relative w-full h-1.5 rounded-full bg-zinc-700 overflow-visible">
           <div
-            className="absolute h-full rounded-full bg-blue-500"
+            className="absolute h-full rounded-full bg-primary"
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -43,12 +44,13 @@ function Slider({ min = 0, max = 100, value, defaultValue, onValueChange, classN
         max={max}
         value={current}
         disabled={disabled}
+        aria-label={ariaLabel}
         onChange={handleChange}
         className="absolute inset-0 w-full opacity-0 cursor-pointer h-full"
         style={{ WebkitAppearance: 'none' }}
       />
       <div
-        className="absolute w-3 h-3 rounded-full bg-white border border-gray-400 shadow pointer-events-none"
+        className="absolute w-3 h-3 rounded-full bg-white border border-zinc-400 shadow pointer-events-none"
         style={{ left: `calc(${pct}% - 6px)` }}
       />
     </div>

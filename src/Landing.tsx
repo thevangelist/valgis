@@ -1,4 +1,5 @@
-import { Monitor, Camera } from 'lucide-react';
+import { Monitor, Camera, Star } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -11,9 +12,11 @@ const GithubIcon = () => (
 export default function Landing({
   onDesktop,
   onCamera,
+  onAstro,
 }: {
   onDesktop: () => void;
   onCamera: () => void;
+  onAstro: () => void;
 }) {
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
@@ -35,7 +38,7 @@ export default function Landing({
       {/* Body */}
       <main className="flex-1 flex flex-col px-6 sm:px-10 pt-20 sm:pt-28 pb-20 max-w-2xl">
 
-        <p className="font-serif italic text-amber-400 text-2xl sm:text-3xl mb-7 leading-snug">
+        <p className="font-serif italic text-[#D9614A] text-2xl sm:text-3xl mb-7 leading-snug">
           "Do you hear that mountain call?"
         </p>
 
@@ -55,25 +58,23 @@ export default function Landing({
           Free for researchers under AGPL-3.0.
         </p>
 
-        {/* Two options */}
+        {/* Modes */}
         <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            onClick={onDesktop}
-            className="flex items-center gap-3 px-5 py-4 rounded-xl bg-cyan-400 text-black text-sm font-medium hover:bg-cyan-300 active:bg-cyan-500 transition-colors"
-          >
-            <Monitor className="w-4 h-4 shrink-0" />
+          <Button variant="primary" size="lg" className="justify-start rounded-xl px-5 gap-3" onClick={onDesktop}>
+            <Monitor className="w-4 h-4" />
             Open Studio
-            <span className="text-black/40 font-normal ml-auto pl-4 hidden sm:block">Desktop</span>
-          </button>
-
-          <button
-            onClick={onCamera}
-            className="flex items-center gap-3 px-5 py-4 rounded-xl bg-zinc-900 text-white text-sm font-medium border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 active:bg-zinc-900 transition-colors"
-          >
-            <Camera className="w-4 h-4 shrink-0" />
+            <span className="text-black/50 font-normal ml-auto pl-4 hidden sm:block">Desktop</span>
+          </Button>
+          <Button variant="outline" size="lg" className="justify-start rounded-xl px-5 gap-3 border-zinc-800 bg-zinc-900 hover:bg-zinc-800" onClick={onCamera}>
+            <Camera className="w-4 h-4" />
             Open Camera
             <span className="text-zinc-400 font-normal ml-auto pl-4 hidden sm:block">Fieldwork</span>
-          </button>
+          </Button>
+          <Button variant="outline" size="lg" className="justify-start rounded-xl px-5 gap-3 border-zinc-800 bg-zinc-900 hover:bg-zinc-800" onClick={onAstro}>
+            <Star className="w-4 h-4" />
+            Open Astro
+            <span className="text-zinc-400 font-normal ml-auto pl-4 hidden sm:block">Telescope</span>
+          </Button>
         </div>
 
       </main>

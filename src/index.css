@@ -19,34 +19,39 @@ body {
 
 @layer base {
   :root {
-    /* Dark theme always — matches the app's gray-900 bg */
-    --background: #1f2937;
-    --foreground: #f9fafb;
-    --card: #374151;
-    --card-foreground: #f9fafb;
-    --popover: #374151;
-    --popover-foreground: #f9fafb;
-    --primary: #3b82f6;
-    --primary-foreground: #ffffff;
-    --secondary: #4b5563;
-    --secondary-foreground: #f9fafb;
-    --muted: #374151;
-    --muted-foreground: #9ca3af;
-    --accent: #4b5563;
-    --accent-foreground: #f9fafb;
+    /* Brand: stone black canvas, zinc surfaces, cyan signal. See brand/colors.md */
+    --background: #000000;
+    --foreground: #ffffff;
+    --card: #18181b;
+    --card-foreground: #ffffff;
+    --popover: #18181b;
+    --popover-foreground: #ffffff;
+    --primary: #22d3ee;
+    --primary-foreground: #000000;
+    --secondary: #27272a;
+    --secondary-foreground: #ffffff;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
+    --accent: #3f3f46;
+    --accent-foreground: #ffffff;
     --destructive: #ef4444;
-    --border: #4b5563;
-    --input: #374151;
-    --ring: #3b82f6;
+    --border: #3f3f46;
+    --input: #27272a;
+    --ring: #22d3ee;
     --radius: 0.5rem;
   }
+  *:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 }
+
 /* Dark scrollbars: Firefox via scrollbar-color, WebKit via pseudo-elements. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #4b5563 transparent;
+  scrollbar-color: #3f3f46 transparent;
 }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #52525b; }

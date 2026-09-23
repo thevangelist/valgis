@@ -9,6 +9,7 @@ import type { HslBandKey, HslBandAdjustment, HslAdjustments, WheelValue, ColorWh
 import { ColorWheel } from './components/ColorWheel';
 import { HueRangePicker } from './components/HueRangePicker';
 import { Slider as ShadSlider } from '@/components/ui/slider';
+import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -134,26 +135,31 @@ function CollapsiblePanel({
   useEffect(() => { localStorage.setItem(storageKey, open ? '1' : '0'); }, [storageKey, open]);
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-700/60 overflow-hidden">
+    <div className="bg-zinc-900 rounded-lg border border-zinc-700/60 overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-800/50 transition-colors"
+        aria-expanded={open}
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-zinc-800/50 transition-colors"
       >
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{title}</span>
+        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">{title}</span>
         <div className="flex items-center gap-2">
           {onEnabledChange !== undefined && (
             <span
-              role="button"
+              role="switch"
+              tabIndex={0}
+              aria-checked={enabled !== false}
+              aria-label={`${title} enabled`}
               onClick={e => { e.stopPropagation(); onEnabledChange(!enabled); }}
-              className="cursor-pointer"
+              onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onEnabledChange(!enabled); } }}
+              className="cursor-pointer rounded"
             >
               {enabled !== false
-                ? <Eye size={13} className="text-gray-300"/>
-                : <EyeOff size={13} className="text-gray-600"/>}
+                ? <Eye size={13} className="text-zinc-300"/>
+                : <EyeOff size={13} className="text-zinc-500"/>}
             </span>
           )}
           {headerExtra}
-          <ChevronDown size={14} className={`text-gray-500 transition-transform ${open ? '' : '-rotate-90'}`} />
+          <ChevronDown size={14} className={`text-zinc-500 transition-transform ${open ? '' : '-rotate-90'}`} />
         </div>
       </button>
       {open && <div className={`px-3 pb-3 ${enabled === false ? 'opacity-40 pointer-events-none select-none' : ''}`}>{children}</div>}
@@ -522,12 +528,12 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
     return (
       <div>
         <div className="flex justify-between items-center mb-1.5" title={title}>
-          <span className="text-xs font-medium text-gray-300">{label}</span>
+          <span className="text-xs font-medium text-zinc-300">{label}</span>
           <span className="flex items-center gap-1">
             {editing ? (
               <input
                 type="number" value={editVal} autoFocus
-                className="w-12 text-xs text-right bg-gray-700 text-gray-200 rounded px-1 outline-none tabular-nums"
+                className="w-12 text-xs text-right bg-zinc-700 text-zinc-200 rounded px-1 outline-none tabular-nums"
                 onChange={e => setEditVal(e.target.value)}
                 onBlur={() => {
                   const n = parseInt(editVal, 10);
@@ -542,20 +548,20 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
             ) : (
               <button
                 onClick={() => { setEditVal(String(value)); setEditing(true); }}
-                className="text-xs text-gray-400 hover:text-gray-200 tabular-nums transition-colors min-w-[2rem] text-right"
+                className="text-xs text-zinc-400 hover:text-zinc-200 tabular-nums transition-colors min-w-[2rem] text-right"
               >
                 {value}
               </button>
             )}
             {value !== defaultVal && !editing && (
-              <button onClick={() => onChange(defaultVal)} className="text-gray-600 hover:text-gray-300 transition-colors" title={`Reset to ${defaultVal}`}>
+              <button onClick={() => onChange(defaultVal)} className="text-zinc-400 hover:text-zinc-300 transition-colors" title={`Reset to ${defaultVal}`}>
                 <RefreshCw size={10} />
               </button>
             )}
           </span>
         </div>
         <ShadSlider
-          min={min} max={max}
+          min={min} max={max} aria-label={label}
           value={[value]}
           onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; onChange(v as number); }}
           className="w-full"
@@ -570,92 +576,77 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-screen bg-gray-900 text-white flex flex-col overflow-hidden">
+    <div className="h-screen bg-background text-foreground flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-gray-950 border-b border-gray-800 px-3 md:px-6 py-3">
+      <header className="bg-black border-b border-zinc-800 px-3 md:px-6 py-3">
         <div className="flex items-center justify-between gap-2 md:gap-4">
           <div className="flex items-center gap-2 md:gap-4">
-            <button onClick={() => setSidebarOpen(o => !o)} className="md:hidden bg-gray-800 hover:bg-gray-700 border border-gray-700 p-2 rounded-md">
-              {sidebarOpen ? <X size={20}/> : <Menu size={20}/>}
-            </button>
-            <button
-              onClick={onBack}
-              className="flex items-center"
-              aria-label="Back to home"
-            >
+            <Button variant="outline" size="icon" className="md:hidden" onClick={() => setSidebarOpen(o => !o)}
+              aria-label={sidebarOpen ? 'Close panel' : 'Open panel'} aria-expanded={sidebarOpen}>
+              {sidebarOpen ? <X size={18}/> : <Menu size={18}/>}
+            </Button>
+            <button onClick={onBack} className="flex items-center rounded-md" aria-label="Back to home">
               <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Valgis" className="h-7 md:h-8" />
             </button>
             {onBack && (
-              <button onClick={onBack} className="flex items-center gap-1 text-gray-400 hover:text-white text-sm transition-colors">
+              <Button variant="ghost" size="sm" onClick={onBack}>
                 <ChevronLeft size={16} /> <span className="hidden md:inline">Home</span>
-              </button>
+              </Button>
             )}
           </div>
 
-          <div className="flex items-center gap-1 md:gap-2">
-            {image && (
-              <>
-                <div className="hidden md:flex items-center gap-1 bg-gray-900 rounded-md p-1 border border-gray-700">
-                  <span className="text-xs text-gray-500 px-1">Render:</span>
-                  {(['smooth','crisp','pixelated'] as const).map(m => (
-                    <button key={m} onClick={() => setRenderingMode(m)}
-                      className={`px-2 py-1 rounded-md text-xs transition-colors ${renderingMode===m ? 'bg-zinc-600 text-white' : 'bg-transparent text-gray-400 hover:text-white'}`}>
-                      {m.charAt(0).toUpperCase()+m.slice(1,m==='pixelated'?5:undefined)}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          {image && (
+            <div className="hidden md:flex items-center gap-1 bg-zinc-900 rounded-md p-1 border border-zinc-700" role="group" aria-label="Canvas rendering">
+              <span className="text-xs text-zinc-400 px-1">Render:</span>
+              {(['smooth','crisp','pixelated'] as const).map(m => (
+                <Button key={m} variant="ghost" size="sm" active={renderingMode===m} aria-pressed={renderingMode===m} onClick={() => setRenderingMode(m)}>
+                  {m.charAt(0).toUpperCase()+m.slice(1,m==='pixelated'?5:undefined)}
+                </Button>
+              ))}
+            </div>
+          )}
 
           <div className="flex gap-1 md:gap-2">
             {image && (
               <>
-                <button
-                  onClick={() => setColorSidebarOpen(o => !o)}
-                  title="Color Mixer"
-                  className={`hidden md:flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 rounded-md border text-xs md:text-sm transition-colors ${colorSidebarOpen ? 'bg-zinc-600 border-zinc-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'}`}
-                >
+                <Button variant="outline" active={colorSidebarOpen} aria-pressed={colorSidebarOpen} className="hidden md:inline-flex"
+                  onClick={() => setColorSidebarOpen(o => !o)} title="Color Mixer">
                   <Palette size={14}/>
                   <span className="hidden lg:inline">Color</span>
-                </button>
-                <div className="flex items-center bg-gray-800 border border-gray-700 rounded-md overflow-hidden">
-                  <button onClick={() => setZoom(z => Math.max(z/1.25,0.1))} className="hover:bg-gray-700 px-2 py-1.5 md:py-2 text-gray-300 hover:text-white transition-colors"><ZoomOut size={14}/></button>
-                  <button onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} className="hover:bg-gray-700 px-2 py-1.5 md:py-2 text-gray-300 hover:text-white border-x border-gray-700 transition-colors"><Maximize2 size={14}/></button>
-                  <button onClick={handleZoom100} className="hover:bg-gray-700 px-2 py-1.5 md:py-2 text-gray-300 hover:text-white border-r border-gray-700 transition-colors"><Maximize size={14}/></button>
-                  <button onClick={() => setZoom(z => Math.min(z*1.25,10))} className="hover:bg-gray-700 px-2 py-1.5 md:py-2 text-gray-300 hover:text-white border-r border-gray-700 transition-colors"><ZoomIn size={14}/></button>
-                  <span className="hidden md:inline text-xs text-gray-500 px-2 min-w-[3rem] text-center tabular-nums">{Math.round(zoom*100)}%</span>
+                </Button>
+                <div className="flex items-center rounded-md border border-border divide-x divide-border overflow-hidden" role="group" aria-label="Zoom">
+                  <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={() => setZoom(z => Math.max(z/1.25,0.1))} aria-label="Zoom out"><ZoomOut size={14}/></Button>
+                  <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} aria-label="Fit to screen"><Maximize2 size={14}/></Button>
+                  <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={handleZoom100} aria-label="Zoom to 100 %"><Maximize size={14}/></Button>
+                  <Button variant="ghost" size="icon" className="rounded-none border-0" onClick={() => setZoom(z => Math.min(z*1.25,10))} aria-label="Zoom in"><ZoomIn size={14}/></Button>
+                  <span className="hidden md:inline text-xs text-zinc-400 px-2 min-w-[3rem] text-center tabular-nums" aria-live="polite">{Math.round(zoom*100)}%</span>
                 </div>
-                <button
-                  onClick={() => setShowOriginal(s => !s)}
-                  className={`border px-2 md:px-3 py-1.5 md:py-2 rounded-md text-xs md:text-sm flex items-center gap-1 md:gap-2 transition-colors ${showOriginal ? 'bg-zinc-600 border-zinc-500 text-white' : 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300'}`}
-                >
+                <Button variant="outline" active={showOriginal} aria-pressed={showOriginal} onClick={() => setShowOriginal(s => !s)}>
                   <Eye size={14}/>
                   <span className="hidden sm:inline">{showOriginal ? 'Edited' : 'Original'}</span>
-                </button>
-                <button onClick={resetSettings} className="bg-gray-800 hover:bg-gray-700 border border-gray-700 px-2 md:px-3 py-1.5 md:py-2 rounded-md text-xs md:text-sm flex items-center gap-1 text-gray-300 hover:text-white transition-colors">
+                </Button>
+                <Button variant="outline" onClick={resetSettings} aria-label="Reset all adjustments">
                   <RotateCcw size={14}/><span className="hidden lg:inline">Reset</span>
-                </button>
+                </Button>
               </>
             )}
-            <button onClick={downloadImage} disabled={!image||isDownloading}
-              className="bg-white hover:bg-zinc-100 text-black disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 disabled:cursor-not-allowed border border-transparent px-2 md:px-4 py-1.5 md:py-2 rounded-md text-xs md:text-sm flex items-center gap-1 md:gap-2 font-medium transition-colors">
+            <Button variant="primary" onClick={downloadImage} disabled={!image||isDownloading}>
               <Download size={14} className={isDownloading?'animate-bounce':''}/>
               <span className="hidden sm:inline">{isDownloading?'Saving...':'Download'}</span>
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
+      </header>
 
       <div className="flex flex-1 overflow-hidden relative">
         {/* Sidebar */}
-        <div className={`${sidebarOpen?'translate-x-0':'-translate-x-full'} md:translate-x-0 fixed md:relative z-20 w-80 bg-gray-800 border-r border-gray-700 flex flex-col overflow-hidden h-full transition-transform duration-300`}>
+        <div className={`${sidebarOpen?'translate-x-0':'-translate-x-full'} md:translate-x-0 fixed md:relative z-20 w-80 bg-zinc-800 border-r border-zinc-700 flex flex-col overflow-hidden h-full transition-transform duration-300`}>
           <div className="flex-1 overflow-y-auto">
             <div className="p-2.5 md:p-3 space-y-2">
 
               {/* Upload */}
               <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                className={`flex items-center justify-center w-full px-3 py-4 bg-gray-700 rounded-lg border-2 border-dashed cursor-pointer transition ${isDragging?'border-blue-400 bg-blue-500/10':'border-gray-600 hover:border-blue-500'}`}>
+                className={`flex items-center justify-center w-full px-3 py-4 bg-zinc-700 rounded-lg border-2 border-dashed cursor-pointer transition ${isDragging?'border-primary bg-primary/10':'border-zinc-600 hover:border-primary'}`}>
                 <label className="cursor-pointer text-center w-full">
                   <Upload className="mx-auto mb-1.5" size={20}/>
                   <span className="text-[11px] block">{isDragging?'Drop image here':'Upload or Drop Image'}</span>
@@ -668,10 +659,10 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
               <CollapsiblePanel
                 id="lighting"
                 title="Lighting Conditions"
-                headerExtra={<span className="text-[11px] text-gray-500">sets sliders below</span>}
+                headerExtra={<span className="text-[11px] text-zinc-400">sets sliders below</span>}
               >
                 <Select value={lightingPreset} onValueChange={v => v && applyLightingPreset(v)}>
-                  <SelectTrigger className="w-full bg-gray-700 border-gray-600 text-gray-200 text-xs h-8">
+                  <SelectTrigger className="w-full bg-zinc-700 border-zinc-600 text-zinc-200 text-xs h-8">
                     <SelectValue>{lightingPresets[lightingPreset as keyof typeof lightingPresets].name}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -681,7 +672,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                   </SelectContent>
                 </Select>
                 {lightingPreset !== 'none' && (
-                  <p className="text-xs text-gray-500 mt-1.5 leading-tight">{lightingPresets[lightingPreset as keyof typeof lightingPresets].desc}</p>
+                  <p className="text-xs text-zinc-400 mt-1.5 leading-tight">{lightingPresets[lightingPreset as keyof typeof lightingPresets].desc}</p>
                 )}
               </CollapsiblePanel>
 
@@ -690,7 +681,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 <div className="space-y-2.5">
                   {Object.entries(filterGroups).map(([gk, group]) => (
                     <div key={gk}>
-                      <span className="block text-[11px] text-gray-500 mb-1">{group.title}</span>
+                      <span className="block text-[11px] text-zinc-400 mb-1">{group.title}</span>
                       <ToggleGroup
                         value={[filter]}
                         onValueChange={(vals) => { if (vals.length) setFilter(vals[vals.length - 1] as FilterName); }}
@@ -699,7 +690,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                         {Object.entries(group.filters).map(([k, f]) => (
                           <ToggleGroupItem
                             key={k} value={k} title={f.desc}
-                            className="h-6 px-2 text-xs font-medium rounded-md border border-gray-700 bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors"
+                            className="h-6 px-2 text-xs font-medium rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors"
                           >
                             {f.name}
                           </ToggleGroupItem>
@@ -718,7 +709,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 onEnabledChange={setToneEnabled}
               >
                 <div className="space-y-2.5">
-                  <span className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest pt-0.5">Exposure</span>
+                  <span className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-widest pt-0.5">Exposure</span>
                   <Slider label="Brightness" value={brightness}  min={0} max={200} defaultVal={100} onChange={setBrightness}
                     gradient="linear-gradient(to right, #111 0%, #666 50%, #fff 100%)"/>
                   <Slider label="Contrast"   value={contrast}    min={0} max={200} defaultVal={100} onChange={setContrast}
@@ -726,9 +717,9 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                   <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}
                     gradient="linear-gradient(to right, hsl(0,0%,45%) 0%, hsl(0,0%,55%) 50%, hsl(14,70%,55%) 100%)"/>
                   <div className="flex items-center gap-2 pt-1">
-                    <div className="flex-1 border-t border-gray-700/60"/>
-                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest shrink-0">Normalize</span>
-                    <div className="flex-1 border-t border-gray-700/60"/>
+                    <div className="flex-1 border-t border-zinc-700/60"/>
+                    <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Normalize</span>
+                    <div className="flex-1 border-t border-zinc-700/60"/>
                   </div>
                   <Slider label="Pre-filter"  value={preNormalize}  min={0} max={100} defaultVal={100} onChange={setPreNormalize}
                     gradient="linear-gradient(to right, hsl(210,35%,40%) 0%, hsl(0,0%,50%) 40%, hsl(30,30%,55%) 100%)"/>
@@ -757,19 +748,19 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 enabled={detailEnabled} onEnabledChange={setDetailEnabled}>
                 <div className="space-y-3">
                   {/* Noise Reduction */}
-                  <span className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest pt-0.5">Noise</span>
+                  <span className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-widest pt-0.5">Noise</span>
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-medium text-gray-300">Noise Reduction</span>
-                      <span className="flex items-center gap-1 text-xs text-gray-400">
+                      <span className="text-xs font-medium text-zinc-300">Noise Reduction</span>
+                      <span className="flex items-center gap-1 text-xs text-zinc-400">
                         {noiseReduction}%
-                        {noiseReduction !== 0 && <button onClick={() => setNoiseReduction(0)} className="text-gray-600 hover:text-gray-300"><RefreshCw size={10}/></button>}
+                        {noiseReduction !== 0 && <button onClick={() => setNoiseReduction(0)} className="text-zinc-400 hover:text-zinc-300"><RefreshCw size={10}/></button>}
                       </span>
                     </div>
                     <ShadSlider min={0} max={100} value={[noiseReduction]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setNoiseReduction(v as number); }} className="w-full mb-2"
                       trackGradient="linear-gradient(to right, hsl(0,0%,55%) 0%, hsl(220,12%,50%) 100%)"/>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-gray-500 shrink-0">Method:</span>
+                      <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
                       <ToggleGroup
                         value={[noiseAlgorithm]}
                         onValueChange={(vals) => { if (vals.length) setNoiseAlgorithm(vals[vals.length-1] as typeof noiseAlgorithm); }}
@@ -777,7 +768,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                       >
                         {(['median','gaussian','bilateral'] as const).map(m => (
                           <ToggleGroupItem key={m} value={m}
-                            className="h-5 px-2 text-[11px] font-medium rounded-md border border-gray-700 bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors capitalize">
+                            className="h-5 px-2 text-[11px] font-medium rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors capitalize">
                             {m}
                           </ToggleGroupItem>
                         ))}
@@ -785,23 +776,23 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 border-t border-gray-700/60"/>
-                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest shrink-0">Sharpen</span>
-                    <div className="flex-1 border-t border-gray-700/60"/>
+                    <div className="flex-1 border-t border-zinc-700/60"/>
+                    <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Sharpen</span>
+                    <div className="flex-1 border-t border-zinc-700/60"/>
                   </div>
                   {/* Sharpening */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-medium text-gray-300">Sharpening</span>
-                      <span className="flex items-center gap-1 text-xs text-gray-400">
+                      <span className="text-xs font-medium text-zinc-300">Sharpening</span>
+                      <span className="flex items-center gap-1 text-xs text-zinc-400">
                         {sharpening}%
-                        {sharpening !== 0 && <button onClick={() => setSharpening(0)} className="text-gray-600 hover:text-gray-300"><RefreshCw size={10}/></button>}
+                        {sharpening !== 0 && <button onClick={() => setSharpening(0)} className="text-zinc-400 hover:text-zinc-300"><RefreshCw size={10}/></button>}
                       </span>
                     </div>
                     <ShadSlider min={0} max={100} value={[sharpening]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setSharpening(v as number); }} className="w-full mb-2"
                       trackGradient="linear-gradient(to right, hsl(0,0%,35%) 0%, hsl(0,0%,88%) 100%)"/>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-gray-500 shrink-0">Method:</span>
+                      <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
                       <ToggleGroup
                         value={[sharpenAlgorithm]}
                         onValueChange={(vals) => { if (vals.length) setSharpenAlgorithm(vals[vals.length-1] as typeof sharpenAlgorithm); }}
@@ -809,7 +800,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                       >
                         {(['unsharp','highpass','laplacian'] as const).map(m => (
                           <ToggleGroupItem key={m} value={m}
-                            className="h-5 px-2 text-[11px] font-medium rounded-md border border-gray-700 bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors capitalize">
+                            className="h-5 px-2 text-[11px] font-medium rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors capitalize">
                             {m}
                           </ToggleGroupItem>
                         ))}
@@ -830,8 +821,8 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                 const pts = (vals: number[]) =>
                   `0,64 ${vals.map((v, i) => `${i},${64 - (v / gMax) * 64}`).join(' ')} 255,64`;
                 return (
-                  <CollapsiblePanel id="histogram" title="Histogram">
-                    <div className="relative h-20 bg-gray-950 rounded overflow-hidden">
+                  <CollapsiblePanel id="histogram" title="Histogram" defaultOpen={false}>
+                    <div className="relative h-20 bg-zinc-950 rounded overflow-hidden">
                       <svg className="absolute inset-0 w-full h-full" viewBox="0 0 256 64" preserveAspectRatio="none">
                         {/* luminance */}
                         <polyline fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" strokeWidth="0.5" points={pts(lum)}/>
@@ -846,7 +837,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                         const vals = [histogram.r, histogram.g, histogram.b][i];
                         const total = vals.reduce((a, v) => a + v, 0) || 1;
                         const mean = Math.round(vals.reduce((a, v, j) => a + v * j, 0) / total);
-                        const colors = ['text-red-400','text-green-400','text-blue-400'];
+                        const colors = ['text-red-400','text-green-400','text-primary'];
                         return (
                           <span key={ch} className={`text-[11px] ${colors[i]}`}>{ch} {mean}</span>
                         );
@@ -866,23 +857,23 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
         {/* Loading overlay */}
         {isProcessing && (
           <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center">
-            <div className="bg-gray-800 rounded-lg p-8 flex flex-col items-center gap-4 border border-gray-700">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"/>
+            <div className="bg-zinc-800 rounded-lg p-8 flex flex-col items-center gap-4 border border-zinc-700">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"/>
               <p className="text-white text-lg">{processingMessage}</p>
             </div>
           </div>
         )}
 
         {/* Main canvas */}
-        <div className="flex-1 bg-gray-900 flex flex-col overflow-hidden">
+        <div className="flex-1 bg-zinc-900 flex flex-col overflow-hidden">
           {imageDimensions && (
-            <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 text-xs text-gray-400 flex items-center justify-between">
+            <div className="bg-zinc-800 border-b border-zinc-700 px-4 py-2 text-xs text-zinc-400 flex items-center justify-between">
               <span>{imageDimensions.width} × {imageDimensions.height} px</span>
               <div className="flex items-center gap-2">
-                <span className="text-gray-200 font-medium">{filterMeta[filter]?.name ?? 'Original'}</span>
+                <span className="text-zinc-200 font-medium">{filterMeta[filter]?.name ?? 'Original'}</span>
                 {filterMeta[filter] && <>
-                  <span className="text-gray-600">·</span>
-                  <span className="text-gray-500">{filterMeta[filter].group}</span>
+                  <span className="text-zinc-600">·</span>
+                  <span className="text-zinc-400">{filterMeta[filter].group}</span>
                 </>}
               </div>
             </div>
@@ -893,21 +884,21 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
             onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
             style={{ cursor: isPanning ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}>
             {!image ? (
-              <div className="text-center text-gray-500">
+              <div className="text-center text-zinc-400">
                 <Upload size={64} className="mx-auto mb-4 opacity-30"/>
                 <p className="text-lg mb-2">Upload an image to begin</p>
-                <p className="text-sm text-gray-600">Astronomy · Rock art · Archaeology · Natural science</p>
+                <p className="text-sm text-zinc-400">Astronomy · Rock art · Archaeology · Natural science</p>
               </div>
             ) : (
               <div className="relative max-w-full max-h-full flex items-center justify-center"
                 style={{ transform:`scale(${zoom}) translate(${panX/zoom}px,${panY/zoom}px)`, transformOrigin:'center center', transition:isPanning?'none':'transform 0.1s ease-out' }}>
-                <canvas ref={canvasRef} className="border border-gray-700 shadow-2xl"
+                <canvas ref={canvasRef} className="border border-zinc-700 shadow-2xl"
                   style={{ maxWidth:'100%', maxHeight:'calc(100vh - 120px)', objectFit:'contain', pointerEvents:'none',
                     imageRendering: renderingMode==='smooth'?'auto':renderingMode==='crisp'?'crisp-edges':'pixelated' }}/>
                 {isEditing && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded">
                     <div className="flex flex-col items-center gap-2">
-                      <svg className="animate-spin h-8 w-8 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                       </svg>
@@ -922,7 +913,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
 
         {/* ── Color sidebar (right) ───────────────────────────────────── */}
         {colorSidebarOpen && image && (
-          <div className="hidden md:flex flex-col w-64 bg-gray-800 border-l border-gray-700 shrink-0">
+          <div className="hidden md:flex flex-col w-64 bg-zinc-800 border-l border-zinc-700 shrink-0">
 
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
 
@@ -937,13 +928,13 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                     const w = colorWheels[key];
                     const active = isWheelActive(w);
                     return (
-                      <div key={key} className={`rounded-lg p-3 border transition-colors ${active ? 'border-purple-600/50 bg-gray-900/80' : 'border-gray-700/60 bg-gray-900'}`}>
+                      <div key={key} className={`rounded-lg p-3 border transition-colors ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-zinc-700/60 bg-zinc-900'}`}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className={`text-xs font-semibold uppercase tracking-wider ${active ? 'text-purple-300' : 'text-gray-400'}`}>{label}</span>
+                          <span className={`text-xs font-semibold uppercase tracking-wider ${active ? 'text-primary' : 'text-zinc-400'}`}>{label}</span>
                           {active && (
                             <button
                               onClick={() => updateWheel(key, { x: 0, y: 0, luma: 0 })}
-                              className="text-[10px] text-gray-500 hover:text-red-400 flex items-center gap-0.5 transition-colors"
+                              className="text-[10px] text-zinc-400 hover:text-red-400 flex items-center gap-0.5 transition-colors"
                             >
                               <RefreshCw size={9}/> Reset
                             </button>
@@ -963,8 +954,8 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                           <div className="flex-1 pt-1 space-y-2">
                             <div>
                               <div className="flex justify-between mb-1">
-                                <span className="text-[10px] text-gray-400">Luma</span>
-                                <span className="text-[10px] text-gray-400 tabular-nums">
+                                <span className="text-[10px] text-zinc-400">Luma</span>
+                                <span className="text-[10px] text-zinc-400 tabular-nums">
                                   {w.luma > 0 ? '+' : ''}{w.luma}
                                 </span>
                               </div>
@@ -975,7 +966,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                               />
                             </div>
                             {(w.x !== 0 || w.y !== 0) && (
-                              <div className="text-[10px] text-gray-600 tabular-nums">
+                              <div className="text-[10px] text-zinc-400 tabular-nums">
                                 x {w.x.toFixed(2)}  y {w.y.toFixed(2)}
                               </div>
                             )}
@@ -988,20 +979,20 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                   {(isWheelActive(colorWheels.lift) || isWheelActive(colorWheels.gamma) || isWheelActive(colorWheels.gain)) && (
                     <button
                       onClick={() => setColorWheels({ lift: {x:0,y:0,luma:0}, gamma: {x:0,y:0,luma:0}, gain: {x:0,y:0,luma:0} })}
-                      className="w-full text-[10px] text-gray-500 hover:text-red-400 transition-colors py-1"
+                      className="w-full text-[10px] text-zinc-400 hover:text-red-400 transition-colors py-1"
                     >
                       Reset all wheels
                     </button>
                   )}
 
-                  <p className="text-[10px] text-gray-600 leading-snug">
+                  <p className="text-[10px] text-zinc-400 leading-snug">
                     Drag wheels to push color into shadows, midtones, or highlights. Double-click a wheel to reset it.
                   </p>
                 </div>
               </CollapsiblePanel>
 
               {/* ── HSL panel ── */}
-              <CollapsiblePanel id="hsl" title="HSL">
+              <CollapsiblePanel id="hsl" title="HSL" defaultOpen={false}>
                 <div className="space-y-3">
                   {/* Band swatches */}
                   <div className="grid grid-cols-4 gap-1.5">
@@ -1032,13 +1023,13 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                     const adj   = hslAdjustments[selectedBand];
                     const active = isBandActive(selectedBand);
                     return (
-                      <div className={`rounded-lg p-3 border space-y-2.5 ${active ? 'border-purple-600/50 bg-gray-900/80' : 'border-gray-700/60 bg-gray-900'}`}>
+                      <div className={`rounded-lg p-3 border space-y-2.5 ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-zinc-700/60 bg-zinc-900'}`}>
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium" style={{ color: band.color }}>{band.label}</span>
                           {active && (
                             <button
                               onClick={() => setHslAdjustments(prev => ({ ...prev, [selectedBand]: defaultBand(selectedBand) }))}
-                              className="text-[10px] text-gray-500 hover:text-red-400 flex items-center gap-0.5 transition-colors"
+                              className="text-[10px] text-zinc-400 hover:text-red-400 flex items-center gap-0.5 transition-colors"
                             >
                               <RefreshCw size={9}/> Reset
                             </button>
@@ -1054,7 +1045,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                           }))}
                         />
 
-                        <div className="border-t border-gray-700/60"/>
+                        <div className="border-t border-zinc-700/60"/>
 
                         {([
                           { field: 'hue'        as const, label: 'Hue Shift',  min: -180, max: 180, unit: '°' },
@@ -1063,8 +1054,8 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                         ]).map(({ field, label: fl, min, max, unit }) => (
                           <div key={field}>
                             <div className="flex justify-between mb-1">
-                              <span className="text-xs text-gray-300">{fl}</span>
-                              <span className="text-xs text-gray-400 tabular-nums">
+                              <span className="text-xs text-zinc-300">{fl}</span>
+                              <span className="text-xs text-zinc-400 tabular-nums">
                                 {adj[field] > 0 ? '+' : ''}{adj[field]}{unit}
                               </span>
                             </div>
@@ -1080,12 +1071,12 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                   })()}
 
                   {HSL_BANDS.some(b => isBandActive(b.key)) && (
-                    <div className="border-t border-gray-700 pt-2">
+                    <div className="border-t border-zinc-700 pt-2">
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] text-gray-500 uppercase tracking-wide">Active</span>
+                        <span className="text-[10px] text-zinc-400 uppercase tracking-wide">Active</span>
                         <button
                           onClick={() => setHslAdjustments(defaultHslAdjustments())}
-                          className="text-[10px] text-gray-500 hover:text-red-400 transition-colors"
+                          className="text-[10px] text-zinc-400 hover:text-red-400 transition-colors"
                         >
                           Reset all
                         </button>

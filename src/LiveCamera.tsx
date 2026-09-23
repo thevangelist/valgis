@@ -55,7 +55,7 @@ function QuickSlider({
     <div className="flex items-center gap-2">
       <span className="text-white/50 text-[10px] w-6 shrink-0 text-right">{label}</span>
       <input
-        type="range" min={min} max={max} value={value}
+        type="range" min={min} max={max} value={value} aria-label={label}
         onChange={e => onChange(Number(e.target.value))}
         className="flex-1 h-1 appearance-none rounded-full bg-white/20 accent-white cursor-pointer"
       />
@@ -168,6 +168,7 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
           >
             <button
               onClick={onBack}
+              aria-label="Back to home"
               className="pointer-events-auto bg-black/50 text-white p-2 rounded-full backdrop-blur-sm"
             >
               <X className="w-5 h-5" />
@@ -181,6 +182,7 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
               )}
               <button
                 onClick={() => { stop(); setTimeout(start, 80); }}
+                aria-label="Restart camera"
                 className="pointer-events-auto bg-black/50 text-white p-2 rounded-full backdrop-blur-sm"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -220,6 +222,7 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
               {FILTERS.map(f => (
                 <button
                   key={f.key}
+                  aria-pressed={filter === f.key}
                   onClick={() => setFilter(f.key as LiveFilter)}
                   className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
                     filter === f.key
@@ -237,6 +240,8 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
               {/* Sliders toggle — left of shutter */}
               <button
                 onClick={() => setShowSliders(v => !v)}
+                aria-label="Adjustments"
+                aria-expanded={showSliders}
                 className={`absolute left-8 p-2 rounded-full backdrop-blur-sm transition-colors ${
                   showSliders || hasAdjustments
                     ? 'bg-white/20 text-white'
@@ -248,6 +253,7 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
 
               <button
                 onClick={handleShutter}
+                aria-label="Capture"
                 disabled={state !== 'running'}
                 className="w-16 h-16 rounded-full border-[3px] border-white/90 flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
               >
@@ -273,6 +279,7 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
           >
             <button
               onClick={handleDismiss}
+              aria-label="Dismiss"
               className="bg-black/50 text-white p-2 rounded-full backdrop-blur-sm"
             >
               <X className="w-5 h-5" />
