@@ -41,3 +41,12 @@ body {
     --radius: 0.5rem;
   }
 }
+/* Dark scrollbars: Firefox via scrollbar-color, WebKit via pseudo-elements. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #4b5563 transparent;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #6b7280; }

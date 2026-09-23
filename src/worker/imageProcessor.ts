@@ -158,15 +158,14 @@ function decorrelationStretch(
 ): void {
   const n = width * height;
 
-  // Convert sRGB → linear light before PCA so covariance reflects physical
-  // photon variance rather than gamma-warped display values.
+  // Linear-light PCA so covariance reflects photon variance, not gamma.
+  // Kept in float: rounding linear values to uint8 posterises the shadows.
   // Lab filters skip this because rgbToLab already linearizes internally.
-  if (linearize) {
-    for (let i = 0; i < n; i++) {
-      data[i*4]   = srgbToLinear(data[i*4]);
-      data[i*4+1] = srgbToLinear(data[i*4+1]);
-      data[i*4+2] = srgbToLinear(data[i*4+2]);
-    }
+  const src = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    src[i*3]   = linearize ? srgbToLinear(data[i*4])   : data[i*4];
+    src[i*3+1] = linearize ? srgbToLinear(data[i*4+1]) : data[i*4+1];
+    src[i*3+2] = linearize ? srgbToLinear(data[i*4+2]) : data[i*4+2];
   }
 
   // Sample pixels for covariance (performance for large images)
@@ -178,7 +177,7 @@ function decorrelationStretch(
   const s2 = new Float32Array(sampleCount);
 
   for (let si = 0, i = 0; si < sampleCount; si++, i += step) {
-    const [a, b, c] = toCS(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]);
+    const [a, b, c] = toCS(src[i * 3], src[i * 3 + 1], src[i * 3 + 2]);
     s0[si] = a; s1[si] = b; s2[si] = c;
   }
 
@@ -275,7 +274,7 @@ function decorrelationStretch(
   const outB = new Float32Array(n);
 
   for (let i = 0; i < n; i++) {
-    const [a, b, c] = toCS(data[i*4], data[i*4+1], data[i*4+2]);
+    const [a, b, c] = toCS(src[i*3], src[i*3+1], src[i*3+2]);
     const da = a-m0, db = b-m1, dc = c-m2;
 
     // Project to PC space (p = V^T · d)
@@ -329,19 +328,11 @@ function decorrelationStretch(
   }
 
   const gRange = gMax - gMin || 1;
+  const enc = linearize ? linearToSrgb : (v: number) => v;
   for (let i = 0; i < n; i++) {
-    data[i*4]   = Math.min(255, Math.max(0, Math.round((outR[i] - gMin) / gRange * 255)));
-    data[i*4+1] = Math.min(255, Math.max(0, Math.round((outG[i] - gMin) / gRange * 255)));
-    data[i*4+2] = Math.min(255, Math.max(0, Math.round((outB[i] - gMin) / gRange * 255)));
-  }
-
-  // Convert linear light back to sRGB gamma for display.
-  if (linearize) {
-    for (let i = 0; i < n; i++) {
-      data[i*4]   = Math.min(255, Math.max(0, Math.round(linearToSrgb(data[i*4]))));
-      data[i*4+1] = Math.min(255, Math.max(0, Math.round(linearToSrgb(data[i*4+1]))));
-      data[i*4+2] = Math.min(255, Math.max(0, Math.round(linearToSrgb(data[i*4+2]))));
-    }
+    data[i*4]   = enc((outR[i] - gMin) / gRange * 255);
+    data[i*4+1] = enc((outG[i] - gMin) / gRange * 255);
+    data[i*4+2] = enc((outB[i] - gMin) / gRange * 255);
   }
 }
 
@@ -974,13 +965,22 @@ function applyHSLAdjustments(data: Uint8ClampedArray, n: number, adj: HslAdjustm
 const PRE_NORM_SKIP  = new Set<FilterName>(['none', 'autolevel', 'histeq', 'adaptive']);
 const POST_NORM_SKIP = new Set<FilterName>(['none', 'autolevel', 'histeq', 'satboost']);
 
+function resetLiveState(): void {
+  liveEMA.clear();
+  postNormEMA.clear();
+  preNormEMA.state = null;
+  autoLevelEMA.state = null;
+}
+
 if (typeof self !== 'undefined') self.onmessage = (e: MessageEvent) => {
-  const { pixels, width, height, options, live } = e.data as {
+  if (e.data.reset) { resetLiveState(); return; }
+  const { pixels, width, height, options, live, id } = e.data as {
     pixels: ArrayBuffer;
     width: number;
     height: number;
     options: ProcessOptions;
     live?: boolean;
+    id?: string;
   };
 
   const data = new Uint8ClampedArray(pixels);
@@ -1020,7 +1020,7 @@ if (typeof self !== 'undefined') self.onmessage = (e: MessageEvent) => {
   if (noiseReduction > 0) applyNoiseReduction(data, width, height, noiseAlgorithm, noiseReduction);
   if (sharpening > 0) applySharpening(data, width, height, sharpenAlgorithm, sharpening);
 
-  (self as unknown as Worker).postMessage({ pixels: data.buffer, width, height }, [data.buffer]);
+  (self as unknown as Worker).postMessage({ pixels: data.buffer, width, height, id }, [data.buffer]);
 };
 
 // ─── Test exports (not used in production) ───────────────────────────────────

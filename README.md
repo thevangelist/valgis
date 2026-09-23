@@ -44,7 +44,7 @@ Use it to scan quickly across a panel before you commit the DSLR. It tells you w
 | CRGB | RGB | ×3.0 | Fast vivid scan |
 | Adaptive | n/a | n/a | Auto-suppresses lichen and shadow |
 
-**Adaptive** is a custom filter unique to Valgis. Instead of a fixed decorrelation matrix, it samples the image locally and suppresses lichen, shadow, and surface variation that would otherwise dominate the stretch.
+**Adaptive** is not a PCA filter. It is a per-pixel heuristic: pixels with a green cast get their green channel cut, dark pixels get a warm lift, everything else a mild red bias. It is a quick lichen and shadow suppressor, not a locally sampled stretch.
 
 ---
 
@@ -59,7 +59,6 @@ Everything runs in the browser. Nothing leaves your device.
 ## Development
 
 ```bash
-cd decorrelation-stretch
 npm install
 npm run dev
 ```

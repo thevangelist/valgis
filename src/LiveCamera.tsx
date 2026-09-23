@@ -24,6 +24,12 @@ const BASE_OPTS: ProcessOptions = {
   noiseReduction: 0, noiseAlgorithm: 'median', sharpening: 0, sharpenAlgorithm: 'unsharp',
 };
 
+function readStored(key: string, fallback: number): number {
+  const v = localStorage.getItem(key);
+  const n = v === null ? NaN : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 // ─── Save helper ──────────────────────────────────────────────────────────────
 
 async function saveImage(blob: Blob, filename: string) {
@@ -70,9 +76,9 @@ export default function LiveCamera({ onBack }: { onBack: () => void }) {
   const [previewUrl, setPreviewUrl]     = useState<string | null>(null);
   const [saving, setSaving]             = useState(false);
   const [showSliders, setShowSliders]   = useState(false);
-  const [brightness, setBrightness]     = useState(() => Number(localStorage.getItem('valgis.brightness')) || 100);
-  const [contrast, setContrast]         = useState(() => Number(localStorage.getItem('valgis.contrast'))   || 100);
-  const [saturation, setSaturation]     = useState(() => Number(localStorage.getItem('valgis.saturation')) || 100);
+  const [brightness, setBrightness]     = useState(() => readStored('valgis.brightness', 100));
+  const [contrast, setContrast]         = useState(() => readStored('valgis.contrast',   100));
+  const [saturation, setSaturation]     = useState(() => readStored('valgis.saturation', 100));
 
   useEffect(() => { localStorage.setItem('valgis.brightness', String(brightness)); }, [brightness]);
   useEffect(() => { localStorage.setItem('valgis.contrast',   String(contrast));   }, [contrast]);

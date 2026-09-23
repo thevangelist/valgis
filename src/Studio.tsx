@@ -66,7 +66,7 @@ const filterGroups = {
     title: 'Basic',
     filters: {
       none:     { name: 'Original',  desc: 'No filter — unprocessed image.' },
-      adaptive: { name: 'Adaptive',  desc: 'Context-aware stretch. Reduces green cast, enhances dark areas.' },
+      adaptive: { name: 'Adaptive',  desc: 'Per-pixel heuristic, no PCA. Cuts green cast, lifts dark areas.' },
     },
   },
   ycbcr: {
@@ -447,9 +447,19 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
 
   // ── Zoom & pan ───────────────────────────────────────────────────────────────
 
-  const handleWheel     = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(z => Math.min(Math.max(e.deltaY < 0 ? z * 1.25 : z / 1.25, 0.1), 10)); }
-  };
+  const viewportRef = useRef<HTMLDivElement>(null);
+  // Native listener: React wheel handlers are passive, so preventDefault would not stop pinch-zoom.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setZoom(z => Math.min(Math.max(e.deltaY < 0 ? z * 1.25 : z / 1.25, 0.1), 10));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (zoom > 1) { setIsPanning(true); setPanStart({ x: e.clientX - panX, y: e.clientY - panY }); }
   };
@@ -490,18 +500,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
   const isWheelActive = (w: WheelValue) => w.x !== 0 || w.y !== 0 || w.luma !== 0;
 
   const updateBand = (key: HslBandKey, field: keyof HslBandAdjustment, value: number) => {
-    setHslAdjustments(prev => {
-      const existing = prev[key];
-      return {
-        ...prev,
-        [key]: {
-          center:    existing.center    ?? BAND_DEFAULTS[key].center,
-          halfWidth: existing.halfWidth ?? BAND_DEFAULTS[key].halfWidth,
-          ...existing,
-          [field]: value,
-        },
-      };
-    });
+    setHslAdjustments(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   };
 
   const isBandActive = (key: HslBandKey) => {
@@ -723,7 +722,7 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                   <Slider label="Brightness" value={brightness}  min={0} max={200} defaultVal={100} onChange={setBrightness}
                     gradient="linear-gradient(to right, #111 0%, #666 50%, #fff 100%)"/>
                   <Slider label="Contrast"   value={contrast}    min={0} max={200} defaultVal={100} onChange={setContrast}
-                    gradient="linear-gradient(to right, hsl(0,0%,55%) 0%, hsl(0,0%,40%) 50%, hsl(0,0%,8%) 65%, hsl(0,0%,95%) 100%)"/>
+                    gradient="linear-gradient(to right, hsl(0,0%,50%) 0%, hsla(0,0%,50%,0) 100%), repeating-linear-gradient(to right, #0a0a0a 0 3px, #f0f0f0 3px 6px)"/>
                   <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}
                     gradient="linear-gradient(to right, hsl(0,0%,45%) 0%, hsl(0,0%,55%) 50%, hsl(14,70%,55%) 100%)"/>
                   <div className="flex items-center gap-2 pt-1">
@@ -745,9 +744,9 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
                   <Slider label="Shadow Recovery"    value={shadowRecovery}    min={0} max={100} defaultVal={0} onChange={setShadowRecovery}
                     gradient="linear-gradient(to right, #0a0a0a 0%, hsl(30,15%,40%) 100%)"/>
                   <Slider label="Highlight Recovery" value={highlightRecovery} min={0} max={100} defaultVal={0} onChange={setHighlightRecovery}
-                    gradient="linear-gradient(to right, hsl(40,15%,60%) 0%, #f8f8f8 100%)"/>
+                    gradient="linear-gradient(to right, #f8f8f8 0%, hsl(40,15%,60%) 100%)"/>
                   <Slider label="Clarity"            value={clarity}           min={0} max={100} defaultVal={0} onChange={setClarity}
-                    gradient="linear-gradient(to right, hsl(0,0%,40%) 0%, hsl(0,0%,88%) 100%)"/>
+                    gradient="linear-gradient(to right, hsl(0,0%,50%) 0%, hsla(0,0%,50%,0) 100%), repeating-linear-gradient(to right, #222 0 2px, #ddd 2px 4px)"/>
                   <Slider label="Dehaze"             value={dehaze}            min={0} max={100} defaultVal={0} onChange={setDehaze}
                     gradient="linear-gradient(to right, hsl(210,20%,55%) 0%, hsl(30,10%,35%) 100%)"/>
                 </div>
@@ -889,8 +888,8 @@ const Studio = ({ onBack }: { onBack?: () => void } = {}) => {
             </div>
           )}
 
-          <div className="flex-1 flex items-center justify-center p-4 overflow-hidden"
-            onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
+          <div ref={viewportRef} className="flex-1 flex items-center justify-center p-4 overflow-hidden"
+            onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
             style={{ cursor: isPanning ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}>
             {!image ? (

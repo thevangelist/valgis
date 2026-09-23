@@ -24,6 +24,7 @@ export function useLiveCamera(outputCanvasRef: RefObject<HTMLCanvasElement>) {
   const frameTimesRef    = useRef<number[]>([]);
   // Keep the last rendered ImageData so we can redraw instantly after a canvas resize.
   const lastImageDataRef = useRef<ImageData | null>(null);
+  const captureResolveRef = useRef<((img: ImageData) => void) | null>(null);
 
   const optsRef = useRef<ProcessOptions>({
     filter: 'none', brightness: 100, contrast: 100, saturation: 100,
@@ -38,8 +39,14 @@ export function useLiveCamera(outputCanvasRef: RefObject<HTMLCanvasElement>) {
     );
 
     worker.onmessage = (e: MessageEvent) => {
-      const { pixels, width, height } = e.data as { pixels: ArrayBuffer; width: number; height: number };
+      const { pixels, width, height, id } = e.data as { pixels: ArrayBuffer; width: number; height: number; id?: string };
       const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
+      if (id === 'capture') {
+        busyRef.current = false;
+        captureResolveRef.current?.(imageData);
+        captureResolveRef.current = null;
+        return;
+      }
       lastImageDataRef.current = imageData;
 
       const canvas = outputCanvasRef.current;
@@ -120,6 +127,7 @@ export function useLiveCamera(outputCanvasRef: RefObject<HTMLCanvasElement>) {
     cleanup();
     setError(null);
     pausedRef.current = false;
+    workerRef.current?.postMessage({ reset: true });
 
     let stream: MediaStream;
     try {
@@ -158,6 +166,10 @@ export function useLiveCamera(outputCanvasRef: RefObject<HTMLCanvasElement>) {
       const worker = workerRef.current;
       if (!vid || !worker || vid.readyState < 2) return;
 
+      // Skip the grab entirely while the worker is busy: one pending frame is
+      // enough and getImageData at 60 Hz would starve the worker on mobile.
+      if (busyRef.current && pendingRef.current) return;
+
       const screenAR = window.innerWidth / Math.max(window.innerHeight, 1);
       const frame    = grabFrame(vid, screenAR);
       if (!frame) return;
@@ -187,11 +199,12 @@ export function useLiveCamera(outputCanvasRef: RefObject<HTMLCanvasElement>) {
   // a sequence of frames from filters the user has already moved past.
   const setOptions = useCallback((opts: ProcessOptions) => {
     if (filterDebounce.current) clearTimeout(filterDebounce.current);
-    if (INSTANT_FILTERS.has(opts.filter)) {
+    const apply = () => {
+      if (opts.filter !== optsRef.current.filter) workerRef.current?.postMessage({ reset: true });
       optsRef.current = opts;
-    } else {
-      filterDebounce.current = setTimeout(() => { optsRef.current = opts; }, 150);
-    }
+    };
+    if (INSTANT_FILTERS.has(opts.filter)) apply();
+    else filterDebounce.current = setTimeout(apply, 150);
   }, []);
 
   // Grab the current video frame at full camera resolution, run the active
@@ -213,26 +226,19 @@ export function useLiveCamera(outputCanvasRef: RefObject<HTMLCanvasElement>) {
       buf = ctx.getImageData(0, 0, W, H).data.buffer.slice(0);
     } catch { return Promise.resolve(null); }
 
+    // The reply is matched by id, so an in-flight live frame cannot be mistaken for the capture.
     return new Promise(resolve => {
-      const prevHandler = worker.onmessage;
-
-      worker.onmessage = (e: MessageEvent) => {
-        worker.onmessage = prevHandler;
-        busyRef.current = false;
-
-        const { pixels, width, height } = e.data as { pixels: ArrayBuffer; width: number; height: number };
-        const oc  = new OffscreenCanvas(width, height);
-        const ctx = oc.getContext('2d')!;
-        ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels), width, height), 0, 0);
+      captureResolveRef.current = (img) => {
+        const oc  = new OffscreenCanvas(img.width, img.height);
+        oc.getContext('2d')!.putImageData(img, 0, 0);
         // JPEG for iOS Photos compatibility; falls back to PNG
         oc.convertToBlob({ type: 'image/jpeg', quality: 0.97 }).then(resolve).catch(() =>
           oc.convertToBlob({ type: 'image/png' }).then(resolve)
         );
       };
-
       busyRef.current = true;
       // live:false → fresh PCA, not temporally smoothed
-      worker.postMessage({ pixels: buf, width: W, height: H, options: optsRef.current }, [buf]);
+      worker.postMessage({ pixels: buf, width: W, height: H, options: optsRef.current, id: 'capture' }, [buf]);
     });
   }, []);
 
