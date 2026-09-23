@@ -2,19 +2,21 @@
 
 # Valgis
 
-High-performance browser-based spectral imaging suite. Real-time PCA-driven enhancement for rock art, archaeology, cultural heritage, and forensics.
+Browser-based spectral imaging. PCA decorrelation stretch for rock art and archaeology, linear-data stretching for astrophotography. Nothing is reconstructed: every tool is measured signal, amplified.
 
-Free for researchers, archaeologists, and students. Open source under AGPL-3.0 — commercial use requires keeping the source open.
+Free for researchers, archaeologists, and students. Open source under AGPL-3.0. Commercial use requires keeping the source open.
 
 ---
 
 ## Two tools, one workflow
 
-### Desktop Studio
+### Studio
 
-A full editing environment for site photography. Load TIFF, HEIC, RAW, or JPEG. Apply any spectral filter, then refine with shadow and highlight recovery, dehaze, clarity, noise reduction, and sharpening. The same controls you'd reach for in Lightroom, Darktable, or Adobe Camera Raw, built into the same workflow as the spectral filters.
+A desktop editor with two modes.
 
-Come back from the site with a folder of DSLR shots. Load them one by one, work through the filter set, pull out what the camera didn't show you.
+**Rock art.** Load TIFF, HEIC, RAW, or JPEG. Apply a spectral filter, then refine with shadow and highlight recovery, dehaze, clarity, noise reduction, and sharpening. Come back from the site with a folder of DSLR shots, work through the filter set, pull out what the camera didn't show you.
+
+**Astro (beta).** Load a FITS frame or a 16-bit TIFF at full precision. Auto-STF, asinh, and log stretches on linear data, linked or per channel. Background extraction, background neutralization, 2×2 binning, SCNR. Then the same tone and detail tools as Rock art, for a single underexposed frame as much as a stack.
 
 ![Valgis desktop UI](brand/github-desktop-ui.png)
 
@@ -50,7 +52,7 @@ Use it to scan quickly across a panel before you commit the DSLR. It tells you w
 
 ## No install. No account. No upload.
 
-Everything runs in the browser. Nothing leaves your device.
+Everything runs in the browser. Nothing leaves your device. No AI, no deconvolution, no guessing: if it is in the output, it was in the sensor data.
 
 [**→ Open Valgis**](https://thevangelist.github.io/valgis/)
 
@@ -63,4 +65,9 @@ npm install
 npm run dev
 ```
 
-PCA runs in a Web Worker with temporal EMA smoothing for live camera stability. Built with React, Vite, Tailwind, and [ml-matrix](https://github.com/mljs/matrix).
+```bash
+npm test        # vitest
+npm run typecheck
+```
+
+PCA and the tonal chain run in a Web Worker, with temporal EMA smoothing for live camera stability. Built with React, Vite, Tailwind, and [ml-matrix](https://github.com/mljs/matrix).
