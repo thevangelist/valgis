@@ -18,6 +18,17 @@ export const DEFAULT_ADJUSTMENTS: Adjustments = {
   toneEnabled: true, enhancementEnabled: true, detailEnabled: true,
 };
 
+export const ADJUSTMENT_GROUPS = {
+  tone:        ['brightness', 'contrast', 'saturation', 'preNormalize', 'postNormalize'],
+  enhancement: ['shadowRecovery', 'highlightRecovery', 'clarity', 'dehaze'],
+  detail:      ['noiseReduction', 'noiseAlgorithm', 'sharpening', 'sharpenAlgorithm'],
+} as const satisfies Record<string, readonly (keyof Adjustments)[]>;
+export type AdjustmentGroup = keyof typeof ADJUSTMENT_GROUPS;
+
+export function isGroupDirty(a: Adjustments, g: AdjustmentGroup, defaults: Adjustments = DEFAULT_ADJUSTMENTS): boolean {
+  return ADJUSTMENT_GROUPS[g].some(k => a[k] !== defaults[k]);
+}
+
 type Action =
   | { type: 'set'; patch: Partial<Adjustments> }
   | { type: 'reset'; keep?: (keyof Adjustments)[] };
@@ -38,7 +49,13 @@ export function useAdjustments(initial: Partial<Adjustments> = {}) {
   const set = <K extends keyof Adjustments>(key: K, value: Adjustments[K]) => dispatch({ type: 'set', patch: { [key]: value } as Partial<Adjustments> });
   const patch = (p: Partial<Adjustments>) => dispatch({ type: 'set', patch: p });
   const reset = (keep?: (keyof Adjustments)[]) => dispatch({ type: 'reset', keep });
-  return { adj, set, patch, reset };
+  const resetGroup = (g: AdjustmentGroup) => {
+    const defaults = { ...DEFAULT_ADJUSTMENTS, ...initial };
+    const p: Partial<Adjustments> = {};
+    for (const k of ADJUSTMENT_GROUPS[g]) (p as Record<string, unknown>)[k] = defaults[k];
+    dispatch({ type: 'set', patch: p });
+  };
+  return { adj, set, patch, reset, resetGroup, defaults: { ...DEFAULT_ADJUSTMENTS, ...initial } as Adjustments };
 }
 
 // Bypassed groups fall back to their neutral values so the worker sees one flat option set.

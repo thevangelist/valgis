@@ -1,9 +1,16 @@
 import { CollapsiblePanel } from '@/components/CollapsiblePanel';
 import { Slider } from '@/components/Slider';
 import { ChipGroup } from '@/components/ChipGroup';
-import type { Adjustments } from '@/hooks/useAdjustments';
+import { isGroupDirty } from '@/hooks/useAdjustments';
+import type { Adjustments, AdjustmentGroup } from '@/hooks/useAdjustments';
 
-type Props = { adj: Adjustments; set: <K extends keyof Adjustments>(k: K, v: Adjustments[K]) => void };
+type Props = {
+  adj: Adjustments;
+  set: <K extends keyof Adjustments>(k: K, v: Adjustments[K]) => void;
+  resetGroup: (g: AdjustmentGroup) => void;
+  defaults?: Adjustments;
+};
+const resetProps = (p: Props, g: AdjustmentGroup) => ({ onReset: () => p.resetGroup(g), dirty: isGroupDirty(p.adj, g, p.defaults) });
 
 const GRADIENT = {
   brightness: 'linear-gradient(to right, #111 0%, #666 50%, #fff 100%)',
@@ -34,9 +41,10 @@ export function SectionRule({ children }: { children: string }) {
 }
 
 // `normalize` shows the pre/post-filter sliders, which only make sense in front of a spectral filter.
-export function TonePanel({ adj, set, normalize = true }: Props & { normalize?: boolean }) {
+export function TonePanel(p: Props & { normalize?: boolean }) {
+  const { adj, set, normalize = true } = p;
   return (
-    <CollapsiblePanel id="tone" title="Tone" enabled={adj.toneEnabled} onEnabledChange={v => set('toneEnabled', v)}>
+    <CollapsiblePanel id="tone" title="Tone" enabled={adj.toneEnabled} onEnabledChange={v => set('toneEnabled', v)} {...resetProps(p, 'tone')}>
       <div className="space-y-2.5">
         <SectionLabel>Exposure</SectionLabel>
         <Slider label="Brightness" value={adj.brightness} min={0} max={200} defaultVal={100} onChange={v => set('brightness', v)} gradient={GRADIENT.brightness}/>
@@ -52,9 +60,10 @@ export function TonePanel({ adj, set, normalize = true }: Props & { normalize?: 
   );
 }
 
-export function EnhancementPanel({ adj, set }: Props) {
+export function EnhancementPanel(p: Props) {
+  const { adj, set } = p;
   return (
-    <CollapsiblePanel id="enhancement" title="Enhancement" enabled={adj.enhancementEnabled} onEnabledChange={v => set('enhancementEnabled', v)}>
+    <CollapsiblePanel id="enhancement" title="Enhancement" enabled={adj.enhancementEnabled} onEnabledChange={v => set('enhancementEnabled', v)} {...resetProps(p, 'enhancement')}>
       <div className="space-y-2.5">
         <Slider label="Shadow Recovery"    value={adj.shadowRecovery}    min={0} max={100} defaultVal={0} onChange={v => set('shadowRecovery', v)}    gradient={GRADIENT.shadow}/>
         <Slider label="Highlight Recovery" value={adj.highlightRecovery} min={0} max={100} defaultVal={0} onChange={v => set('highlightRecovery', v)} gradient={GRADIENT.highlight}/>
@@ -67,9 +76,10 @@ export function EnhancementPanel({ adj, set }: Props) {
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
-export function DetailPanel({ adj, set }: Props) {
+export function DetailPanel(p: Props) {
+  const { adj, set } = p;
   return (
-    <CollapsiblePanel id="detail" title="Detail" enabled={adj.detailEnabled} onEnabledChange={v => set('detailEnabled', v)}>
+    <CollapsiblePanel id="detail" title="Detail" enabled={adj.detailEnabled} onEnabledChange={v => set('detailEnabled', v)} {...resetProps(p, 'detail')}>
       <div className="space-y-3">
         <SectionLabel>Noise</SectionLabel>
         <Slider label="Noise Reduction" value={adj.noiseReduction} min={0} max={100} defaultVal={0} onChange={v => set('noiseReduction', v)} gradient={GRADIENT.noise}/>

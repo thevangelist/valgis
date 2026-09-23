@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { Eye, EyeOff, ChevronDown } from 'lucide-react';
+import { Eye, EyeOff, ChevronDown, RefreshCw } from 'lucide-react';
 
 // ─── Collapsible panel ────────────────────────────────────────────────────────
 
 export function CollapsiblePanel({
-  id, title, headerExtra, children, defaultOpen = true, enabled, onEnabledChange,
+  id, title, headerExtra, children, defaultOpen = true, enabled, onEnabledChange, onReset, dirty = false,
 }: {
   id: string; title: string; headerExtra?: ReactNode;
   children: ReactNode; defaultOpen?: boolean;
   enabled?: boolean; onEnabledChange?: (v: boolean) => void;
+  onReset?: () => void; dirty?: boolean;
 }) {
   const storageKey = `valgis.panel.${id}`;
   const [open, setOpen] = useState(() => {
@@ -43,6 +44,19 @@ export function CollapsiblePanel({
             </span>
           )}
           {headerExtra}
+          {onReset && dirty && (
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={`Reset ${title}`}
+              title={`Reset ${title}`}
+              onClick={e => { e.stopPropagation(); onReset(); }}
+              onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onReset(); } }}
+              className="cursor-pointer rounded text-zinc-400 hover:text-foreground"
+            >
+              <RefreshCw size={12}/>
+            </span>
+          )}
           <ChevronDown size={14} className={`text-zinc-500 transition-transform ${open ? '' : '-rotate-90'}`} />
         </div>
       </button>

@@ -126,7 +126,7 @@ Object.entries(filterGroups).forEach(([, g]) =>
 
 const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) => {
   const [filter,           setFilter          ] = useState<FilterName>('none');
-  const { adj, set: setAdj, patch: patchAdj, reset: resetAdj } = useAdjustments();
+  const { adj, set: setAdj, patch: patchAdj, reset: resetAdj, resetGroup } = useAdjustments();
   const [lightingPreset,   setLightingPreset  ] = useState('none');
   const [renderingMode,    setRenderingMode   ] = useState<'smooth'|'crisp'|'pixelated'>('smooth');
 
@@ -407,6 +407,7 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
       <CollapsiblePanel
         id="lighting"
         title="Lighting Conditions"
+        dirty={lightingPreset !== 'none'} onReset={() => applyLightingPreset('none')}
         headerExtra={<span className="text-[11px] text-zinc-400">sets sliders below</span>}
       >
         <Select value={lightingPreset} onValueChange={v => v && applyLightingPreset(v)}>
@@ -425,7 +426,7 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
       </CollapsiblePanel>
 
       {/* ── Spectral filters ── */}
-      <CollapsiblePanel id="spectral" title="Spectral Filter">
+      <CollapsiblePanel id="spectral" title="Spectral Filter" dirty={filter !== 'none'} onReset={() => setFilter('none')}>
         <div className="space-y-2.5">
           {Object.entries(filterGroups).map(([gk, group]) => (
             <div key={gk}>
@@ -439,9 +440,9 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
         </div>
       </CollapsiblePanel>
 
-      <TonePanel adj={adj} set={setAdj}/>
-      <EnhancementPanel adj={adj} set={setAdj}/>
-      <DetailPanel adj={adj} set={setAdj}/>
+      <TonePanel adj={adj} set={setAdj} resetGroup={resetGroup}/>
+      <EnhancementPanel adj={adj} set={setAdj} resetGroup={resetGroup}/>
+      <DetailPanel adj={adj} set={setAdj} resetGroup={resetGroup}/>
 
       {/* Histogram */}
       {histogram && (() => {
@@ -486,7 +487,9 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
   const rightSidebar = colorSidebarOpen && image && (
     <>
       {/* ── Color Wheels panel ── */}
-      <CollapsiblePanel id="wheels" title="Color Wheels">
+      <CollapsiblePanel id="wheels" title="Color Wheels"
+        dirty={isWheelActive(colorWheels.lift) || isWheelActive(colorWheels.gamma) || isWheelActive(colorWheels.gain)}
+        onReset={() => setColorWheels({ lift: {x:0,y:0,luma:0}, gamma: {x:0,y:0,luma:0}, gain: {x:0,y:0,luma:0} })}>
         <div className="space-y-4">
           {([
             { key: 'lift'  as const, label: 'Shadows'    },
@@ -560,7 +563,8 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
       </CollapsiblePanel>
 
       {/* ── HSL panel ── */}
-      <CollapsiblePanel id="hsl" title="HSL" defaultOpen={false}>
+      <CollapsiblePanel id="hsl" title="HSL" defaultOpen={false}
+        dirty={HSL_BANDS.some(b => isBandActive(b.key))} onReset={() => setHslAdjustments(defaultHslAdjustments())}>
         <div className="space-y-3">
           {/* Band swatches */}
           <div className="grid grid-cols-4 gap-1.5">

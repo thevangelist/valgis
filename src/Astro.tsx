@@ -75,7 +75,7 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
   const setLevel = (k: keyof Levels, v: number) => setLevels(l => ({ ...l, [k]: v }));
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [editing, setEditing] = useState(false);
-  const { adj, set: setAdj, reset: resetAdj } = useAdjustments({ preNormalize: 0, postNormalize: 0 });
+  const { adj, set: setAdj, reset: resetAdj, resetGroup, defaults: adjDefaults } = useAdjustments({ preNormalize: 0, postNormalize: 0 });
   const client = useWorkerClient();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -174,7 +174,7 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
     <>
       <UploadDrop accept={ASTRO_ACCEPT} isSupported={isAstroFile} onFile={load} label="Upload or Drop FITS / Image"/>
 
-      <CollapsiblePanel id="astro-linear" title="Linear">
+      <CollapsiblePanel id="astro-linear" title="Linear" dirty={tools.length > 0} onReset={() => setTools([])}>
         <ChipGroup<LinearTool> multiple
           chips={[
             { key: 'bin2' as const, label: 'Bin 2', title: 'Sum 2×2 neighbours. SNR ×2, resolution ÷2.' },
@@ -192,7 +192,9 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
         />
       </CollapsiblePanel>
 
-      <CollapsiblePanel id="astro-stretch" title="Stretch">
+      <CollapsiblePanel id="astro-stretch" title="Stretch"
+        dirty={kind !== 'mtf' || amount !== 30 || target !== 25 || shadowClip !== 28 || !linked || levels !== NEUTRAL_LEVELS}
+        onReset={() => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); setLinked(true); setLevels(NEUTRAL_LEVELS); }}>
         <div className="space-y-2.5">
           <ChipGroup chips={KINDS.map(k => ({ key: k.key, label: k.label, title: k.desc }))} value={kind} onChange={setKind} />
           <p className="text-[11px] text-muted-foreground leading-snug">{KINDS.find(k => k.key === kind)?.desc}</p>
@@ -223,9 +225,9 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
         </div>
       </CollapsiblePanel>
 
-      <TonePanel adj={adj} set={setAdj} normalize={false}/>
-      <EnhancementPanel adj={adj} set={setAdj}/>
-      <DetailPanel adj={adj} set={setAdj}/>
+      <TonePanel adj={adj} set={setAdj} resetGroup={resetGroup} defaults={adjDefaults} normalize={false}/>
+      <EnhancementPanel adj={adj} set={setAdj} resetGroup={resetGroup} defaults={adjDefaults}/>
+      <DetailPanel adj={adj} set={setAdj} resetGroup={resetGroup} defaults={adjDefaults}/>
 
       {image && stats && (
         <CollapsiblePanel id="astro-info" title="Image" defaultOpen={false}>
