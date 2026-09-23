@@ -4,6 +4,10 @@ import { Button } from '@/components/ui/button';
 import { StudioShell, InfoBar, EmptyState } from '@/components/studio/StudioShell';
 import { StudioHeader } from '@/components/studio/StudioHeader';
 import { Slider } from '@/components/Slider';
+import { useWorkerClient } from './hooks/useWorkerClient';
+import { isSuperseded } from './lib/workerClient';
+import { useAdjustments, adjustmentsToOptions } from './hooks/useAdjustments';
+import { TonePanel, EnhancementPanel, DetailPanel } from '@/components/panels/AdjustmentPanels';
 import { CollapsiblePanel } from '@/components/CollapsiblePanel';
 import { ChipGroup } from '@/components/ChipGroup';
 import { parseFits } from './lib/fits';
@@ -66,6 +70,9 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
   const [tools, setTools]     = useState<LinearTool[]>([]);
   const [linked, setLinked]   = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const { adj, set: setAdj, reset: resetAdj } = useAdjustments({ preNormalize: 0, postNormalize: 0 });
+  const client = useWorkerClient();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Linear-domain pipeline. Each step is optional and deterministic.
@@ -92,12 +99,10 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
     return per.map(() => one);
   }, [stats, target, shadowClip, linked]);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!processed || !stf || !canvas) return;
-    const image = processed;
-    const { width, height, channels } = image;
-    canvas.width = width; canvas.height = height;
+  // Stretched 8-bit frame, then the shared tonal / enhancement / detail chain in the worker.
+  const stretched = useMemo(() => {
+    if (!processed || !stf) return null;
+    const { width, height, channels } = processed;
     const out = new Uint8ClampedArray(width * height * 4);
     const mono = channels.length === 1;
     for (let c = 0; c < 3; c++) {
@@ -106,8 +111,27 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
       applyStretch(src, out, 4, c, { kind, stf: p, amount });
     }
     for (let i = 3; i < out.length; i += 4) out[i] = 255;
-    canvas.getContext('2d')!.putImageData(new ImageData(out, width, height), 0, 0);
+    return { width, height, out };
   }, [processed, stf, kind, amount]);
+
+  useEffect(() => {
+    if (!stretched) return;
+    const { width, height, out } = stretched;
+    const opts = adjustmentsToOptions(adj, { filter: 'none' });
+    setEditing(true);
+    const timer = setTimeout(() => {
+      client.process({ pixels: out.slice().buffer, width, height, options: opts }, 'edit')
+        .then(r => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d')!.putImageData(r.image, 0, 0);
+          setEditing(false);
+        })
+        .catch(e => { if (!isSuperseded(e)) { console.error(e); setEditing(false); } });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [stretched, adj]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async (file: File) => {
     setBusy('Loading…');
@@ -125,7 +149,7 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
     a.click();
   };
 
-  const reset = () => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); setTools([]); setLinked(true); };
+  const reset = () => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); setTools([]); setLinked(true); resetAdj(['preNormalize', 'postNormalize']); };
 
   const header = (
     <StudioHeader
@@ -172,6 +196,10 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
         </div>
       </CollapsiblePanel>
 
+      <TonePanel adj={adj} set={setAdj} normalize={false}/>
+      <EnhancementPanel adj={adj} set={setAdj}/>
+      <DetailPanel adj={adj} set={setAdj}/>
+
       {image && stats && (
         <CollapsiblePanel id="astro-info" title="Image" defaultOpen={false}>
           <div className="space-y-1 text-[11px] text-muted-foreground tabular-nums">
@@ -193,7 +221,10 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
       )}
       <div className="flex-1 flex items-center justify-center p-4 overflow-hidden">
         {image
-          ? <canvas ref={canvasRef} className="max-w-full max-h-full object-contain border border-border shadow-2xl" />
+          ? <div className="relative max-w-full max-h-full flex items-center justify-center">
+              <canvas ref={canvasRef} className="max-w-full max-h-full object-contain border border-border shadow-2xl" style={{ maxHeight: 'calc(100vh - 120px)' }}/>
+              {editing && <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm text-white">Processing…</div>}
+            </div>
           : <EmptyState icon={<Upload size={64}/>} title="Open a FITS frame or a photo to begin" hint="Linear data in, honest stretch out. Nothing is reconstructed."/>}
       </div>
     </StudioShell>

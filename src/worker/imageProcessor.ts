@@ -686,7 +686,7 @@ function applyNoiseReduction(
   algorithm: 'median' | 'gaussian' | 'bilateral',
   strength: number,
 ): void {
-  if (strength === 0 || width * height > 10_000_000) return;
+  if (strength === 0) return;
   const temp = new Uint8ClampedArray(data);
   const radius = Math.max(1, Math.min(3, Math.floor(strength / 33)));
   const mix = strength / 100;
@@ -741,7 +741,7 @@ function applySharpening(
   algorithm: 'unsharp' | 'highpass' | 'laplacian',
   strength: number,
 ): void {
-  if (strength === 0 || width * height > 15_000_000) return;
+  if (strength === 0) return;
   const temp = new Uint8ClampedArray(data);
   const amt = strength / 100;
 
@@ -962,6 +962,10 @@ function applyHSLAdjustments(data: Uint8ClampedArray, n: number, adj: HslAdjustm
 
 // Filters that already do their own normalization or have hand-tuned thresholds
 // that assume raw input — skip pre/post norm for these to avoid double-processing.
+// Per-pixel convolutions above these sizes take tens of seconds; the caller is told they were skipped.
+export const NOISE_MAX_PX = 10_000_000;
+export const SHARPEN_MAX_PX = 15_000_000;
+
 const PRE_NORM_SKIP  = new Set<FilterName>(['none', 'autolevel', 'histeq', 'adaptive']);
 const POST_NORM_SKIP = new Set<FilterName>(['none', 'autolevel', 'histeq', 'satboost']);
 
@@ -980,8 +984,11 @@ if (typeof self !== 'undefined') self.onmessage = (e: MessageEvent) => {
     height: number;
     options: ProcessOptions;
     live?: boolean;
-    id?: string;
+    id?: number | string;
   };
+  const post = (m: object, t: Transferable[] = []) => (self as unknown as Worker).postMessage({ id, ...m }, t);
+  const progress = (stage: string) => post({ progress: stage });
+  const skipped: string[] = [];
 
   const data = new Uint8ClampedArray(pixels);
   const n = width * height;
@@ -1001,10 +1008,12 @@ if (typeof self !== 'undefined') self.onmessage = (e: MessageEvent) => {
   const liveKey = live ? filter : null;
 
   if (preNormalize > 0 && !PRE_NORM_SKIP.has(filter)) {
+    if (!live) progress('Normalizing');
     applyPreNormalize(data, n, preNormalize, !!live);
   }
 
   if (filter !== 'none') {
+    if (!live) progress('Spectral filter');
     applyDecorrelationFilter(data, width, height, filter, liveKey);
   }
 
@@ -1012,15 +1021,22 @@ if (typeof self !== 'undefined') self.onmessage = (e: MessageEvent) => {
     applyPostNormalize(data, n, postNormalize, filter, liveKey ? `${filter}:post` : null);
   }
 
+  if (!live) progress('Tone');
   applyTonal(data, n, brightness, contrast, saturation, shadowRecovery, highlightRecovery, dehaze);
   if (colorWheels) applyColorWheels(data, n, colorWheels);
   if (hslAdjustments) applyHSLAdjustments(data, n, hslAdjustments);
 
-  if (clarity > 0) applyClarity(data, width, height, clarity);
-  if (noiseReduction > 0) applyNoiseReduction(data, width, height, noiseAlgorithm, noiseReduction);
-  if (sharpening > 0) applySharpening(data, width, height, sharpenAlgorithm, sharpening);
+  if (clarity > 0) { if (!live) progress('Clarity'); applyClarity(data, width, height, clarity); }
+  if (noiseReduction > 0) {
+    if (n > NOISE_MAX_PX) skipped.push('Noise reduction');
+    else { if (!live) progress('Noise reduction'); applyNoiseReduction(data, width, height, noiseAlgorithm, noiseReduction); }
+  }
+  if (sharpening > 0) {
+    if (n > SHARPEN_MAX_PX) skipped.push('Sharpening');
+    else { if (!live) progress('Sharpening'); applySharpening(data, width, height, sharpenAlgorithm, sharpening); }
+  }
 
-  (self as unknown as Worker).postMessage({ pixels: data.buffer, width, height, id }, [data.buffer]);
+  post({ pixels: data.buffer, width, height, skipped }, [data.buffer]);
 };
 
 // ─── Test exports (not used in production) ───────────────────────────────────

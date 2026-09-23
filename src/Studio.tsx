@@ -1,13 +1,15 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, Download, RotateCcw, Eye, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, Palette } from 'lucide-react';
-import { useImageProcessor, processOnce } from './hooks/useImageProcessor';
-import type { ProcessOptions } from './hooks/useImageProcessor';
+import type { ProcessOptions } from './worker/imageProcessor';
+import { useWorkerClient } from './hooks/useWorkerClient';
+import { isSuperseded } from './lib/workerClient';
+import { useAdjustments, adjustmentsToOptions } from './hooks/useAdjustments';
+import { TonePanel, EnhancementPanel, DetailPanel } from '@/components/panels/AdjustmentPanels';
 import type { HslBandKey, HslBandAdjustment, HslAdjustments, WheelValue, ColorWheelAdjustments } from './worker/imageProcessor';
 import { ColorWheel } from './components/ColorWheel';
 import { HueRangePicker } from './components/HueRangePicker';
-import { Slider as ShadSlider } from '@/components/ui/slider';
-import { Slider } from '@/components/Slider';
 import { CollapsiblePanel } from '@/components/CollapsiblePanel';
+import { Slider as ShadSlider } from '@/components/ui/slider';
 import { ChipGroup } from '@/components/ChipGroup';
 import { UploadDrop } from '@/components/UploadDrop';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
@@ -124,19 +126,7 @@ Object.entries(filterGroups).forEach(([, g]) =>
 
 const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) => {
   const [filter,           setFilter          ] = useState<FilterName>('none');
-  const [brightness,       setBrightness      ] = useState(100);
-  const [contrast,         setContrast        ] = useState(100);
-  const [saturation,       setSaturation      ] = useState(100);
-  const [dehaze,           setDehaze          ] = useState(0);
-  const [clarity,          setClarity         ] = useState(0);
-  const [shadowRecovery,   setShadowRecovery  ] = useState(0);
-  const [highlightRecovery,setHighlightRecovery] = useState(0);
-  const [noiseReduction,   setNoiseReduction  ] = useState(0);
-  const [noiseAlgorithm,   setNoiseAlgorithm  ] = useState<'median'|'gaussian'|'bilateral'>('median');
-  const [sharpening,       setSharpening      ] = useState(0);
-  const [sharpenAlgorithm, setSharpenAlgorithm] = useState<'unsharp'|'highpass'|'laplacian'>('unsharp');
-  const [preNormalize,     setPreNormalize    ] = useState(100);
-  const [postNormalize,    setPostNormalize   ] = useState(100);
+  const { adj, set: setAdj, patch: patchAdj, reset: resetAdj } = useAdjustments();
   const [lightingPreset,   setLightingPreset  ] = useState('none');
   const [renderingMode,    setRenderingMode   ] = useState<'smooth'|'crisp'|'pixelated'>('smooth');
 
@@ -158,9 +148,6 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
   const [hslAdjustments,   setHslAdjustments  ] = useState<HslAdjustments>(defaultHslAdjustments);
   const [selectedBand,     setSelectedBand    ] = useState<HslBandKey>('reds');
   const [colorSidebarOpen, setColorSidebarOpen] = useState(true);
-  const [toneEnabled,        setToneEnabled       ] = useState(true);
-  const [enhancementEnabled, setEnhancementEnabled] = useState(true);
-  const [detailEnabled,      setDetailEnabled     ] = useState(true);
 
   const [colorWheels,      setColorWheels     ] = useState<ColorWheelAdjustments>({
     lift:  { x: 0, y: 0, luma: 0 },
@@ -175,17 +162,16 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
 
   // ── Worker ──────────────────────────────────────────────────────────────────
 
-  const handleResult = useCallback((imageData: ImageData) => {
+  const client = useWorkerClient();
+
+  const showResult = (imageData: ImageData) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     canvas.width  = imageData.width;
     canvas.height = imageData.height;
     canvas.getContext('2d')!.putImageData(imageData, 0, 0);
     calculateHistogram(canvas);
-    setIsEditing(false);
-  }, []);
-
-  const { process } = useImageProcessor(handleResult, setIsEditing);
+  };
 
   // ── Trigger processing ───────────────────────────────────────────────────────
 
@@ -203,35 +189,18 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
       return;
     }
 
-    const opts: ProcessOptions = {
-      filter,
-      brightness:        toneEnabled ? brightness        : 100,
-      contrast:          toneEnabled ? contrast          : 100,
-      saturation:        toneEnabled ? saturation        : 100,
-      shadowRecovery:    enhancementEnabled ? shadowRecovery    : 0,
-      highlightRecovery: enhancementEnabled ? highlightRecovery : 0,
-      clarity:           enhancementEnabled ? clarity           : 0,
-      dehaze:            enhancementEnabled ? dehaze            : 0,
-      noiseReduction:    detailEnabled ? noiseReduction    : 0,
-      noiseAlgorithm, sharpening: detailEnabled ? sharpening : 0, sharpenAlgorithm,
-      hslAdjustments,
-      colorWheels,
-      preNormalize:  toneEnabled ? preNormalize  : 0,
-      postNormalize: toneEnabled ? postNormalize : 0,
-    };
-
+    const opts = adjustmentsToOptions(adj, { filter, hslAdjustments, colorWheels });
     currentOptsRef.current = opts;
     setIsEditing(true);
-    const timer = setTimeout(() => process(origCanvas, opts), 150);
+    const timer = setTimeout(() => {
+      const ctx = origCanvas.getContext('2d')!;
+      const buf = ctx.getImageData(0, 0, origCanvas.width, origCanvas.height).data.buffer;
+      client.process({ pixels: buf, width: origCanvas.width, height: origCanvas.height, options: opts }, 'edit')
+        .then(r => { showResult(r.image); setIsEditing(false); })
+        .catch(e => { if (!isSuperseded(e)) { console.error(e); setIsEditing(false); } });
+    }, 150);
     return () => clearTimeout(timer);
-  }, [
-    image, filter, brightness, contrast, saturation,
-    shadowRecovery, highlightRecovery, clarity, dehaze,
-    noiseReduction, noiseAlgorithm, sharpening, sharpenAlgorithm,
-    hslAdjustments, colorWheels, showOriginal,
-    preNormalize, postNormalize,
-    toneEnabled, enhancementEnabled, detailEnabled,
-  ]);
+  }, [image, filter, adj, hslAdjustments, colorWheels, showOriginal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Histogram ───────────────────────────────────────────────────────────────
 
@@ -281,26 +250,38 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
     const opts = currentOptsRef.current;
     if (!origImg || !opts || !image) return;
     setIsDownloading(true);
+    setIsProcessing(true);
+    setProcessingMessage('Preparing full-resolution export…');
     try {
       const fullCanvas = document.createElement('canvas');
       fullCanvas.width  = origImg.naturalWidth;
       fullCanvas.height = origImg.naturalHeight;
-      fullCanvas.getContext('2d')!.drawImage(origImg, 0, 0);
-      const imageData = fullCanvas.getContext('2d')!.getImageData(0, 0, fullCanvas.width, fullCanvas.height);
-      const result = await processOnce(imageData, opts);
-      const exportCanvas = document.createElement('canvas');
-      exportCanvas.width  = result.width;
-      exportCanvas.height = result.height;
-      exportCanvas.getContext('2d')!.putImageData(result, 0, 0);
+      const ctx = fullCanvas.getContext('2d')!;
+      ctx.drawImage(origImg, 0, 0);
+      const buf = ctx.getImageData(0, 0, fullCanvas.width, fullCanvas.height).data.buffer;
+      const { image: result, skipped } = await client.process({
+        pixels: buf, width: fullCanvas.width, height: fullCanvas.height, options: opts,
+        onProgress: stage => setProcessingMessage(`${stage}…`),
+      });
+      setProcessingMessage('Encoding…');
+      fullCanvas.getContext('2d')!.putImageData(result, 0, 0);
       const fmts = { jpeg:{mime:'image/jpeg',ext:'jpg',q:0.95}, png:{mime:'image/png',ext:'png',q:1}, webp:{mime:'image/webp',ext:'webp',q:0.95} };
       const fmt  = fmts[originalFormat];
+      const blob = await new Promise<Blob | null>(res => fullCanvas.toBlob(res, fmt.mime, fmt.q));
+      if (!blob) throw new Error('encode failed');
       const ts   = new Date().toISOString().replace(/[:.]/g,'-').slice(0,-5);
       const a    = document.createElement('a');
-      a.download  = `valgis-${filter}-${ts}.${fmt.ext}`;
-      a.href      = exportCanvas.toDataURL(fmt.mime, fmt.q);
+      a.download = `valgis-${filter}-${ts}.${fmt.ext}`;
+      a.href     = URL.createObjectURL(blob);
       a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      if (skipped.length) alert(`${skipped.join(' and ')} skipped at full resolution: the image is above the size limit for that stage. The preview included it.`);
+    } catch (err) {
+      console.error(err);
+      alert('Export failed.');
     } finally {
       setIsDownloading(false);
+      setIsProcessing(false); setProcessingMessage('');
     }
   };
 
@@ -310,13 +291,7 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
     setLightingPreset(key);
     const p = lightingPresets[key as keyof typeof lightingPresets];
     if (!p) return;
-    setBrightness(p.settings.brightness);
-    setContrast(p.settings.contrast);
-    setSaturation(p.settings.saturation);
-    setShadowRecovery(p.settings.shadowRecovery);
-    setHighlightRecovery(p.settings.highlightRecovery);
-    setClarity(p.settings.clarity);
-    setDehaze(p.settings.dehaze);
+    patchAdj(p.settings);
   };
 
   // ── Zoom & pan ───────────────────────────────────────────────────────────────
@@ -352,9 +327,7 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
   // ── Reset ────────────────────────────────────────────────────────────────────
 
   const resetSettings = () => {
-    setBrightness(100); setContrast(100); setSaturation(100);
-    setDehaze(0); setClarity(0); setShadowRecovery(0); setHighlightRecovery(0);
-    setNoiseReduction(0); setSharpening(0); setFilter('none'); setLightingPreset('none');
+    resetAdj(); setFilter('none'); setLightingPreset('none');
     setHslAdjustments(defaultHslAdjustments());
     setColorWheels({ lift: { x:0, y:0, luma:0 }, gamma: { x:0, y:0, luma:0 }, gain: { x:0, y:0, luma:0 } });
     setZoom(1); setPanX(0); setPanY(0);
@@ -466,98 +439,9 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
         </div>
       </CollapsiblePanel>
 
-      {/* ── Tone ── */}
-      <CollapsiblePanel
-        id="tone"
-        title="Tone"
-        enabled={toneEnabled}
-        onEnabledChange={setToneEnabled}
-      >
-        <div className="space-y-2.5">
-          <span className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-widest pt-0.5">Exposure</span>
-          <Slider label="Brightness" value={brightness}  min={0} max={200} defaultVal={100} onChange={setBrightness}
-            gradient="linear-gradient(to right, #111 0%, #666 50%, #fff 100%)"/>
-          <Slider label="Contrast"   value={contrast}    min={0} max={200} defaultVal={100} onChange={setContrast}
-            gradient="linear-gradient(to right, hsl(0,0%,50%) 0%, hsla(0,0%,50%,0) 100%), repeating-linear-gradient(to right, #0a0a0a 0 3px, #f0f0f0 3px 6px)"/>
-          <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}
-            gradient="linear-gradient(to right, hsl(0,0%,45%) 0%, hsl(0,0%,55%) 50%, hsl(14,70%,55%) 100%)"/>
-          <div className="flex items-center gap-2 pt-1">
-            <div className="flex-1 border-t border-border"/>
-            <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Normalize</span>
-            <div className="flex-1 border-t border-border"/>
-          </div>
-          <Slider label="Pre-filter"  value={preNormalize}  min={0} max={100} defaultVal={100} onChange={setPreNormalize}
-            gradient="linear-gradient(to right, hsl(210,35%,40%) 0%, hsl(0,0%,50%) 40%, hsl(30,30%,55%) 100%)"/>
-          <Slider label="Post-filter" value={postNormalize} min={0} max={100} defaultVal={100} onChange={setPostNormalize}
-            gradient="linear-gradient(to right, hsl(0,0%,20%) 0%, hsl(0,0%,55%) 50%, hsl(0,0%,92%) 100%)"/>
-        </div>
-      </CollapsiblePanel>
-
-      {/* ── Enhancement ── */}
-      <CollapsiblePanel id="enhancement" title="Enhancement"
-        enabled={enhancementEnabled} onEnabledChange={setEnhancementEnabled}>
-        <div className="space-y-2.5">
-          <Slider label="Shadow Recovery"    value={shadowRecovery}    min={0} max={100} defaultVal={0} onChange={setShadowRecovery}
-            gradient="linear-gradient(to right, #0a0a0a 0%, hsl(30,15%,40%) 100%)"/>
-          <Slider label="Highlight Recovery" value={highlightRecovery} min={0} max={100} defaultVal={0} onChange={setHighlightRecovery}
-            gradient="linear-gradient(to right, #f8f8f8 0%, hsl(40,15%,60%) 100%)"/>
-          <Slider label="Clarity"            value={clarity}           min={0} max={100} defaultVal={0} onChange={setClarity}
-            gradient="linear-gradient(to right, hsl(0,0%,50%) 0%, hsla(0,0%,50%,0) 100%), repeating-linear-gradient(to right, #222 0 2px, #ddd 2px 4px)"/>
-          <Slider label="Dehaze"             value={dehaze}            min={0} max={100} defaultVal={0} onChange={setDehaze}
-            gradient="linear-gradient(to right, hsl(210,20%,55%) 0%, hsl(30,10%,35%) 100%)"/>
-        </div>
-      </CollapsiblePanel>
-
-      {/* ── Detail ── */}
-      <CollapsiblePanel id="detail" title="Detail"
-        enabled={detailEnabled} onEnabledChange={setDetailEnabled}>
-        <div className="space-y-3">
-          {/* Noise Reduction */}
-          <span className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-widest pt-0.5">Noise</span>
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-medium text-zinc-300">Noise Reduction</span>
-              <span className="flex items-center gap-1 text-xs text-zinc-400">
-                {noiseReduction}%
-                {noiseReduction !== 0 && <button onClick={() => setNoiseReduction(0)} className="text-zinc-400 hover:text-zinc-300"><RefreshCw size={10}/></button>}
-              </span>
-            </div>
-            <ShadSlider min={0} max={100} value={[noiseReduction]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setNoiseReduction(v as number); }} className="w-full mb-2"
-              trackGradient="linear-gradient(to right, hsl(0,0%,55%) 0%, hsl(220,12%,50%) 100%)"/>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
-              <ChipGroup
-                chips={(['median','gaussian','bilateral'] as const).map(m => ({ key: m, label: m[0].toUpperCase() + m.slice(1) }))}
-                value={noiseAlgorithm} onChange={setNoiseAlgorithm} className="flex gap-1"
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 border-t border-border"/>
-            <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Sharpen</span>
-            <div className="flex-1 border-t border-border"/>
-          </div>
-          {/* Sharpening */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-medium text-zinc-300">Sharpening</span>
-              <span className="flex items-center gap-1 text-xs text-zinc-400">
-                {sharpening}%
-                {sharpening !== 0 && <button onClick={() => setSharpening(0)} className="text-zinc-400 hover:text-zinc-300"><RefreshCw size={10}/></button>}
-              </span>
-            </div>
-            <ShadSlider min={0} max={100} value={[sharpening]} onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; setSharpening(v as number); }} className="w-full mb-2"
-              trackGradient="linear-gradient(to right, hsl(0,0%,35%) 0%, hsl(0,0%,88%) 100%)"/>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
-              <ChipGroup
-                chips={(['unsharp','highpass','laplacian'] as const).map(m => ({ key: m, label: m[0].toUpperCase() + m.slice(1) }))}
-                value={sharpenAlgorithm} onChange={setSharpenAlgorithm} className="flex gap-1"
-              />
-            </div>
-          </div>
-        </div>
-      </CollapsiblePanel>
+      <TonePanel adj={adj} set={setAdj}/>
+      <EnhancementPanel adj={adj} set={setAdj}/>
+      <DetailPanel adj={adj} set={setAdj}/>
 
       {/* Histogram */}
       {histogram && (() => {
