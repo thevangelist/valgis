@@ -602,7 +602,9 @@ function applyTonal(
   highlightRecovery: number,
   dehaze: number,
 ): void {
-  const contrastFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+  // Slider is 0..200 with 100 neutral. Map to the classic -255..255 form so 100 → factor 1.
+  const c = (contrast - 100) * 1.28;
+  const contrastFactor = (259 * (c + 255)) / (255 * (259 - c));
   const brightnessScale = brightness / 100;
   const satScale = saturation / 100;
 
@@ -969,7 +971,51 @@ export const SHARPEN_MAX_PX = 15_000_000;
 const PRE_NORM_SKIP  = new Set<FilterName>(['none', 'autolevel', 'histeq', 'adaptive']);
 const POST_NORM_SKIP = new Set<FilterName>(['none', 'autolevel', 'histeq', 'satboost']);
 
-function resetLiveState(): void {
+export interface ProcessResult { skipped: string[]; }
+
+// The whole pipeline on one RGBA buffer, in place. `progress` fires before each slow stage.
+export function processImage(
+  data: Uint8ClampedArray, width: number, height: number, options: ProcessOptions,
+  live = false, progress: (stage: string) => void = () => {},
+): ProcessResult {
+  const n = width * height;
+  const {
+    filter, brightness, contrast, saturation,
+    shadowRecovery, highlightRecovery, clarity, dehaze,
+    noiseReduction, noiseAlgorithm, sharpening, sharpenAlgorithm,
+    hslAdjustments, colorWheels,
+  } = options;
+  const preNormalize  = options.preNormalize  ?? 100;
+  const postNormalize = options.postNormalize ?? 100;
+  const skipped: string[] = [];
+  const stage = (name: string) => { if (!live) progress(name); };
+
+  // liveKey enables EMA + sign stabilization for that filter.
+  // Static image processing passes null → fresh PCA every time.
+  const liveKey = live ? filter : null;
+
+  if (preNormalize > 0 && !PRE_NORM_SKIP.has(filter)) { stage('Normalizing'); applyPreNormalize(data, n, preNormalize, live); }
+  if (filter !== 'none') { stage('Spectral filter'); applyDecorrelationFilter(data, width, height, filter, liveKey); }
+  if (postNormalize > 0 && !POST_NORM_SKIP.has(filter)) applyPostNormalize(data, n, postNormalize, filter, liveKey ? `${filter}:post` : null);
+
+  stage('Tone');
+  applyTonal(data, n, brightness, contrast, saturation, shadowRecovery, highlightRecovery, dehaze);
+  if (colorWheels) applyColorWheels(data, n, colorWheels);
+  if (hslAdjustments) applyHSLAdjustments(data, n, hslAdjustments);
+
+  if (clarity > 0) { stage('Clarity'); applyClarity(data, width, height, clarity); }
+  if (noiseReduction > 0) {
+    if (n > NOISE_MAX_PX) skipped.push('Noise reduction');
+    else { stage('Noise reduction'); applyNoiseReduction(data, width, height, noiseAlgorithm, noiseReduction); }
+  }
+  if (sharpening > 0) {
+    if (n > SHARPEN_MAX_PX) skipped.push('Sharpening');
+    else { stage('Sharpening'); applySharpening(data, width, height, sharpenAlgorithm, sharpening); }
+  }
+  return { skipped };
+}
+
+export function resetLiveState(): void {
   liveEMA.clear();
   postNormEMA.clear();
   preNormEMA.state = null;
@@ -979,63 +1025,11 @@ function resetLiveState(): void {
 if (typeof self !== 'undefined') self.onmessage = (e: MessageEvent) => {
   if (e.data.reset) { resetLiveState(); return; }
   const { pixels, width, height, options, live, id } = e.data as {
-    pixels: ArrayBuffer;
-    width: number;
-    height: number;
-    options: ProcessOptions;
-    live?: boolean;
-    id?: number | string;
+    pixels: ArrayBuffer; width: number; height: number; options: ProcessOptions; live?: boolean; id?: number | string;
   };
   const post = (m: object, t: Transferable[] = []) => (self as unknown as Worker).postMessage({ id, ...m }, t);
-  const progress = (stage: string) => post({ progress: stage });
-  const skipped: string[] = [];
-
   const data = new Uint8ClampedArray(pixels);
-  const n = width * height;
-
-  const {
-    filter, brightness, contrast, saturation,
-    shadowRecovery, highlightRecovery, clarity, dehaze,
-    noiseReduction, noiseAlgorithm, sharpening, sharpenAlgorithm,
-    hslAdjustments,
-    colorWheels,
-  } = options;
-  const preNormalize  = options.preNormalize  ?? 100;
-  const postNormalize = options.postNormalize ?? 100;
-
-  // liveKey enables EMA + sign stabilization for that filter.
-  // Static image processing passes null → fresh PCA every time.
-  const liveKey = live ? filter : null;
-
-  if (preNormalize > 0 && !PRE_NORM_SKIP.has(filter)) {
-    if (!live) progress('Normalizing');
-    applyPreNormalize(data, n, preNormalize, !!live);
-  }
-
-  if (filter !== 'none') {
-    if (!live) progress('Spectral filter');
-    applyDecorrelationFilter(data, width, height, filter, liveKey);
-  }
-
-  if (postNormalize > 0 && !POST_NORM_SKIP.has(filter)) {
-    applyPostNormalize(data, n, postNormalize, filter, liveKey ? `${filter}:post` : null);
-  }
-
-  if (!live) progress('Tone');
-  applyTonal(data, n, brightness, contrast, saturation, shadowRecovery, highlightRecovery, dehaze);
-  if (colorWheels) applyColorWheels(data, n, colorWheels);
-  if (hslAdjustments) applyHSLAdjustments(data, n, hslAdjustments);
-
-  if (clarity > 0) { if (!live) progress('Clarity'); applyClarity(data, width, height, clarity); }
-  if (noiseReduction > 0) {
-    if (n > NOISE_MAX_PX) skipped.push('Noise reduction');
-    else { if (!live) progress('Noise reduction'); applyNoiseReduction(data, width, height, noiseAlgorithm, noiseReduction); }
-  }
-  if (sharpening > 0) {
-    if (n > SHARPEN_MAX_PX) skipped.push('Sharpening');
-    else { if (!live) progress('Sharpening'); applySharpening(data, width, height, sharpenAlgorithm, sharpening); }
-  }
-
+  const { skipped } = processImage(data, width, height, options, !!live, s => post({ progress: s }));
   post({ pixels: data.buffer, width, height, skipped }, [data.buffer]);
 };
 

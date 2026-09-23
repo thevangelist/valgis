@@ -10,6 +10,20 @@ export interface FitsImage {
 
 const BLOCK = 2880;
 
+// A quoted string may contain '/' and doubled quotes; a comment starts at the first '/' outside quotes.
+function parseValue(raw: string): string {
+  const t = raw.trimStart();
+  if (t.startsWith("'")) {
+    let out = '', i = 1;
+    for (; i < t.length; i++) {
+      if (t[i] === "'") { if (t[i + 1] === "'") { out += "'"; i++; continue; } break; }
+      out += t[i];
+    }
+    return out.trimEnd();
+  }
+  return t.split('/')[0].trim();
+}
+
 function parseHeader(buf: ArrayBuffer): { header: Record<string, string>; dataOffset: number } {
   const bytes = new Uint8Array(buf);
   const header: Record<string, string> = {};
@@ -21,9 +35,7 @@ function parseHeader(buf: ArrayBuffer): { header: Record<string, string>; dataOf
     const key = card.slice(0, 8).trim();
     if (key === 'END') break;
     if (card[8] !== '=') continue;
-    let value = card.slice(10).split('/')[0].trim();
-    if (value.startsWith("'")) value = value.slice(1, value.lastIndexOf("'")).trim();
-    header[key] = value;
+    header[key] = parseValue(card.slice(10));
   }
   return { header, dataOffset: Math.ceil(pos / BLOCK) * BLOCK };
 }
