@@ -50,7 +50,7 @@ function Slider({ min = 0, max = 100, value, defaultValue, onValueChange, classN
         style={{ WebkitAppearance: 'none' }}
       />
       <div
-        className="absolute w-3 h-3 rounded-full bg-white border border-zinc-400 shadow pointer-events-none"
+        className="absolute w-3 h-3 rounded-full bg-white border border-border shadow pointer-events-none"
         style={{ left: `calc(${pct}% - 6px)` }}
       />
     </div>

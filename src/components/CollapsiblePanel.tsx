@@ -19,7 +19,7 @@ export function CollapsiblePanel({
   useEffect(() => { localStorage.setItem(storageKey, open ? '1' : '0'); }, [storageKey, open]);
 
   return (
-    <div className="bg-card rounded-lg border border-border/60 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}

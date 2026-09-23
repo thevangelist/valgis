@@ -63,7 +63,7 @@ export default function Landing({
             Studio
             <span className="text-black/50 font-normal ml-auto pl-4 hidden sm:block">Rock art · Astro</span>
           </Button>
-          <Button variant="outline" size="lg" className="justify-start rounded-xl px-5 gap-3 border-zinc-800 bg-zinc-900 hover:bg-zinc-800" onClick={onCamera}>
+          <Button variant="outline" size="lg" className="justify-start rounded-xl px-5 gap-3 border-border bg-zinc-900 hover:bg-zinc-800" onClick={onCamera}>
             <Camera className="w-4 h-4" />
             Field Camera
             <span className="text-zinc-400 font-normal ml-auto pl-4 hidden sm:block">Phone</span>
@@ -73,7 +73,7 @@ export default function Landing({
       </main>
 
       {/* Footer */}
-      <footer className="px-6 sm:px-10 py-5 border-t border-zinc-900 flex items-center justify-between">
+      <footer className="px-6 sm:px-10 py-5 border-t border-border flex items-center justify-between">
         <span className="text-zinc-500 text-xs">AGPL-3.0 license</span>
       </footer>
 

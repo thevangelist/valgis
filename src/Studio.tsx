@@ -482,9 +482,9 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
           <Slider label="Saturation" value={saturation}  min={0} max={200} defaultVal={100} onChange={setSaturation}
             gradient="linear-gradient(to right, hsl(0,0%,45%) 0%, hsl(0,0%,55%) 50%, hsl(14,70%,55%) 100%)"/>
           <div className="flex items-center gap-2 pt-1">
-            <div className="flex-1 border-t border-zinc-700/60"/>
+            <div className="flex-1 border-t border-border"/>
             <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Normalize</span>
-            <div className="flex-1 border-t border-zinc-700/60"/>
+            <div className="flex-1 border-t border-border"/>
           </div>
           <Slider label="Pre-filter"  value={preNormalize}  min={0} max={100} defaultVal={100} onChange={setPreNormalize}
             gradient="linear-gradient(to right, hsl(210,35%,40%) 0%, hsl(0,0%,50%) 40%, hsl(30,30%,55%) 100%)"/>
@@ -533,9 +533,9 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex-1 border-t border-zinc-700/60"/>
+            <div className="flex-1 border-t border-border"/>
             <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest shrink-0">Sharpen</span>
-            <div className="flex-1 border-t border-zinc-700/60"/>
+            <div className="flex-1 border-t border-border"/>
           </div>
           {/* Sharpening */}
           <div>
@@ -612,7 +612,7 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
             const w = colorWheels[key];
             const active = isWheelActive(w);
             return (
-              <div key={key} className={`rounded-lg p-3 border transition-colors ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-zinc-700/60 bg-zinc-900'}`}>
+              <div key={key} className={`rounded-lg p-3 border transition-colors ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-border bg-zinc-900'}`}>
                 <div className="flex items-center justify-between mb-2">
                   <span className={`text-xs font-semibold uppercase tracking-wider ${active ? 'text-primary' : 'text-zinc-400'}`}>{label}</span>
                   {active && (
@@ -707,7 +707,7 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
             const adj   = hslAdjustments[selectedBand];
             const active = isBandActive(selectedBand);
             return (
-              <div className={`rounded-lg p-3 border space-y-2.5 ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-zinc-700/60 bg-zinc-900'}`}>
+              <div className={`rounded-lg p-3 border space-y-2.5 ${active ? 'border-primary/50 bg-zinc-900/80' : 'border-border bg-zinc-900'}`}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium" style={{ color: band.color }}>{band.label}</span>
                   {active && (
@@ -729,7 +729,7 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
                   }))}
                 />
 
-                <div className="border-t border-zinc-700/60"/>
+                <div className="border-t border-border"/>
 
                 {([
                   { field: 'hue'        as const, label: 'Hue Shift',  min: -180, max: 180, unit: '°' },
@@ -755,7 +755,7 @@ const Studio = ({ onBack, onMode }: { onBack: () => void; onMode: () => void }) 
           })()}
 
           {HSL_BANDS.some(b => isBandActive(b.key)) && (
-            <div className="border-t border-zinc-700 pt-2">
+            <div className="border-t border-border pt-2">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] text-zinc-400 uppercase tracking-wide">Active</span>
                 <button
