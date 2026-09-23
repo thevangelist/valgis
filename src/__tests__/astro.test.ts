@@ -98,3 +98,16 @@ describe('astro tools', () => {
     expect(out[1][0]).toBe(15);
   });
 });
+
+describe('levels', () => {
+  const stf = { shadow: 0, highlight: 100, midtone: 0.5 };
+  const run = (levels: Partial<import('../lib/stretch').Levels>) => {
+    const out = new Uint8ClampedArray(4);
+    applyStretch(new Float32Array([25]), out, 4, 0, { kind: 'linear', stf, amount: 0, levels: { exposure: 0, black: 0, white: 0, gamma: 1, ...levels } });
+    return out[0];
+  };
+  it('exposure +1 EV doubles', () => expect(run({ exposure: 1 })).toBe(128));
+  it('black point shift darkens', () => expect(run({ black: 0.25 })).toBe(0));
+  it('white point down brightens', () => expect(run({ white: -0.5 })).toBe(128));
+  it('gamma 2 lifts midtones', () => expect(run({ gamma: 2 })).toBe(128));
+});

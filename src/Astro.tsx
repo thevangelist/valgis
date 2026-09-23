@@ -15,7 +15,9 @@ import { decodeTiffPlanes } from './lib/tiff';
 import { decodeToImage, isSupportedImage, IMAGE_ACCEPT } from './lib/decode';
 import { UploadDrop } from '@/components/UploadDrop';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
-import { channelStats, autoStf, applyStretch } from './lib/stretch';
+import { channelStats, autoStf, applyStretch, NEUTRAL_LEVELS } from './lib/stretch';
+import type { Levels } from './lib/stretch';
+import { SectionRule } from '@/components/panels/AdjustmentPanels';
 import { bin2x2, subtractBackground, neutralizeBackground, scnr } from './lib/astroTools';
 import type { StretchKind, StfParams } from './lib/stretch';
 
@@ -69,6 +71,8 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
   const [busy, setBusy]       = useState('');
   const [tools, setTools]     = useState<LinearTool[]>([]);
   const [linked, setLinked]   = useState(true);
+  const [levels, setLevels]   = useState<Levels>(NEUTRAL_LEVELS);
+  const setLevel = (k: keyof Levels, v: number) => setLevels(l => ({ ...l, [k]: v }));
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [editing, setEditing] = useState(false);
   const { adj, set: setAdj, reset: resetAdj } = useAdjustments({ preNormalize: 0, postNormalize: 0 });
@@ -108,11 +112,11 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
     for (let c = 0; c < 3; c++) {
       const src = mono ? channels[0] : channels[Math.min(c, channels.length - 1)];
       const p = mono ? stf[0] : stf[Math.min(c, stf.length - 1)];
-      applyStretch(src, out, 4, c, { kind, stf: p, amount });
+      applyStretch(src, out, 4, c, { kind, stf: p, amount, levels });
     }
     for (let i = 3; i < out.length; i += 4) out[i] = 255;
     return { width, height, out };
-  }, [processed, stf, kind, amount]);
+  }, [processed, stf, kind, amount, levels]);
 
   useEffect(() => {
     if (!stretched) return;
@@ -149,7 +153,7 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
     a.click();
   };
 
-  const reset = () => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); setTools([]); setLinked(true); resetAdj(['preNormalize', 'postNormalize']); };
+  const reset = () => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); setTools([]); setLinked(true); setLevels(NEUTRAL_LEVELS); resetAdj(['preNormalize', 'postNormalize']); };
 
   const header = (
     <StudioHeader
@@ -193,6 +197,15 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
           {(kind === 'asinh' || kind === 'log') && (
             <Slider label="Strength" value={amount} min={1} max={500} defaultVal={30} onChange={setAmount}/>
           )}
+          <SectionRule>Levels</SectionRule>
+          <Slider label="Exposure (EV ×0.1)" value={Math.round(levels.exposure * 10)} min={-50} max={50} defaultVal={0} onChange={v => setLevel('exposure', v / 10)} title="Linear gain in stops, before the stretch."
+            gradient="linear-gradient(to right, #111 0%, #666 50%, #fff 100%)"/>
+          <Slider label="Black point (%)" value={Math.round(levels.black * 100)} min={-50} max={50} defaultVal={0} onChange={v => setLevel('black', v / 100)} title="Shift the auto black point by a fraction of the range."
+            gradient="linear-gradient(to right, #000 0%, #444 100%)"/>
+          <Slider label="White point (%)" value={Math.round(levels.white * 100)} min={-90} max={50} defaultVal={0} onChange={v => setLevel('white', v / 100)} title="Shift the auto white point. Negative brightens faint detail."
+            gradient="linear-gradient(to right, #999 0%, #fff 100%)"/>
+          <Slider label="Gamma (×0.01)" value={Math.round(levels.gamma * 100)} min={20} max={300} defaultVal={100} onChange={v => setLevel('gamma', v / 100)} title="Applied after the curve. Above 1 lifts midtones."
+            gradient="linear-gradient(to right, #222 0%, #888 40%, #eee 100%)"/>
         </div>
       </CollapsiblePanel>
 

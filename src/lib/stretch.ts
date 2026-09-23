@@ -58,20 +58,35 @@ export function logStretch(x: number, k: number): number {
 
 export type StretchKind = 'linear' | 'mtf' | 'asinh' | 'log';
 
-export interface StretchOptions { kind: StretchKind; stf: StfParams; amount: number; }
+export interface Levels {
+  exposure: number;  // EV, applied as 2^ev gain on linear data
+  black: number;     // -1..1, shifts the black point by that fraction of the range
+  white: number;     // -1..1, shifts the white point by that fraction of the range
+  gamma: number;     // applied after the curve, 1 = none
+}
+export const NEUTRAL_LEVELS: Levels = { exposure: 0, black: 0, white: 0, gamma: 1 };
+
+export interface StretchOptions { kind: StretchKind; stf: StfParams; amount: number; levels?: Levels; }
 
 // Map one float plane to 0..255 through clip → normalise → curve.
 export function applyStretch(src: Float32Array, out: Uint8ClampedArray, stride: number, offset: number, o: StretchOptions): void {
-  const { shadow, highlight, midtone } = o.stf;
+  const { midtone } = o.stf;
+  const lv = o.levels ?? NEUTRAL_LEVELS;
+  const gain = Math.pow(2, lv.exposure);
+  const base = o.stf.highlight - o.stf.shadow || 1;
+  const shadow = o.stf.shadow + lv.black * base;
+  const highlight = o.stf.highlight + lv.white * base;
   const range = highlight - shadow || 1;
+  const invGamma = 1 / (lv.gamma || 1);
   for (let i = 0; i < src.length; i++) {
-    let x = (src[i] - shadow) / range;
+    let x = (src[i] * gain - shadow) / range;
     x = x < 0 ? 0 : x > 1 ? 1 : x;
     switch (o.kind) {
       case 'mtf':   x = mtf(midtone, x); break;
       case 'asinh': x = asinhStretch(x, o.amount); break;
       case 'log':   x = logStretch(x, o.amount); break;
     }
+    if (invGamma !== 1) x = Math.pow(x, invGamma);
     out[i * stride + offset] = x * 255;
   }
 }
