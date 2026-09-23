@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Upload, Download, ChevronLeft, RotateCcw } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { StudioModeSwitch } from '@/components/StudioModeSwitch';
-import { Slider } from '@/components/ui/slider';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Slider } from '@/components/Slider';
+import { CollapsiblePanel } from '@/components/CollapsiblePanel';
+import { ChipGroup } from '@/components/ChipGroup';
 import { parseFits } from './lib/fits';
 import { channelStats, autoStf, applyStretch } from './lib/stretch';
 import { bin2x2, subtractBackground, neutralizeBackground, scnr } from './lib/astroTools';
 import type { StretchKind, StfParams } from './lib/stretch';
+
+type LinearTool = 'bin' | 'background' | 'neutralize' | 'scnr';
 
 interface FloatImage { width: number; height: number; channels: Float32Array[]; name: string; }
 
@@ -45,10 +47,7 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
   const [target, setTarget]   = useState(25);
   const [shadowClip, setShadowClip] = useState(28);
   const [busy, setBusy]       = useState(false);
-  const [bin, setBin]         = useState(false);
-  const [background, setBackground] = useState(false);
-  const [neutralize, setNeutralize] = useState(false);
-  const [green, setGreen]     = useState(false);
+  const [tools, setTools]     = useState<LinearTool[]>([]);
   const [linked, setLinked]   = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -56,12 +55,13 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
   const processed = useMemo<FloatImage | null>(() => {
     if (!image) return null;
     let { width, height, channels } = image;
-    if (bin) ({ planes: channels, width, height } = bin2x2(channels, width, height));
-    if (background) channels = channels.map(c => subtractBackground(c, width, height));
-    if (neutralize) channels = neutralizeBackground(channels);
-    if (green) channels = scnr(channels);
+    const on = (t: LinearTool) => tools.includes(t);
+    if (on('bin')) ({ planes: channels, width, height } = bin2x2(channels, width, height));
+    if (on('background')) channels = channels.map(c => subtractBackground(c, width, height));
+    if (on('neutralize')) channels = neutralizeBackground(channels);
+    if (on('scnr')) channels = scnr(channels);
     return { ...image, width, height, channels };
-  }, [image, bin, background, neutralize, green]);
+  }, [image, tools]);
 
   const stats = useMemo(() => processed?.channels.map(c => channelStats(c)) ?? null, [processed]);
 
@@ -108,7 +108,7 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
     a.click();
   };
 
-  const reset = () => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); setBin(false); setBackground(false); setNeutralize(false); setGreen(false); setLinked(true); };
+  const reset = () => { setKind('mtf'); setAmount(30); setTarget(25); setShadowClip(28); setTools([]); setLinked(true); };
 
   return (
     <div className="h-screen bg-background text-foreground flex flex-col overflow-hidden">
@@ -134,52 +134,45 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
             <input type="file" accept=".fits,.fit,.fts,image/*" className="hidden" onChange={e => e.target.files?.[0] && load(e.target.files[0])}/>
           </label>
 
-          <section className="bg-zinc-900 rounded-lg border border-zinc-700/60 p-3 space-y-2">
-            <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Linear</h2>
-            <Check label="2×2 bin" hint="Sum neighbours. SNR ×2, resolution ÷2." checked={bin} onChange={setBin}/>
-            <Check label="Background extraction" hint="Fit a surface to the sky and subtract it. Removes vignetting and gradients." checked={background} onChange={setBackground}/>
-            {(image?.channels.length ?? 0) >= 3 && <>
-              <Check label="Neutralize background" hint="Match channel medians. Removes sky colour cast." checked={neutralize} onChange={setNeutralize}/>
-              <Check label="SCNR green" hint="Green never exceeds the red/blue mean." checked={green} onChange={setGreen}/>
-            </>}
-          </section>
+          <CollapsiblePanel id="astro-linear" title="Linear">
+            <ChipGroup<LinearTool> multiple
+              chips={[
+                { key: 'bin' as const, label: '2×2 bin', title: 'Sum neighbours. SNR ×2, resolution ÷2.' },
+                { key: 'background' as const, label: 'Background', title: 'Fit a surface to the sky and subtract it. Removes vignetting and gradients.' },
+                ...((image?.channels.length ?? 0) >= 3 ? [
+                  { key: 'neutralize' as const, label: 'Neutralize', title: 'Match channel medians. Removes sky colour cast.' },
+                  { key: 'scnr' as const, label: 'SCNR', title: 'Green never exceeds the red/blue mean.' },
+                ] : []),
+              ]}
+              value={tools} onChange={(v: LinearTool[]) => setTools(v)}
+            />
+          </CollapsiblePanel>
 
-          <section className="bg-zinc-900 rounded-lg border border-zinc-700/60 p-3 space-y-2.5">
-            <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Stretch</h2>
-            <ToggleGroup value={[kind]} onValueChange={v => v.length && setKind(v[v.length - 1] as StretchKind)} className="flex flex-wrap gap-1">
-              {KINDS.map(k => (
-                <ToggleGroupItem key={k.key} value={k.key} title={k.desc}
-                  className="h-6 px-2 text-xs font-medium rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors">
-                  {k.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-            <p className="text-[11px] text-zinc-400 leading-snug">{KINDS.find(k => k.key === kind)?.desc}</p>
-
-            {(image?.channels.length ?? 0) >= 3 && (
-              <Check label="Linked channels" hint="One transfer for all channels keeps colour. Unlinked auto-balances." checked={linked} onChange={setLinked}/>
-            )}
-            <Row label="Target brightness" value={`${target} %`}>
-              <Slider min={5} max={60} value={[target]} onValueChange={([v]) => setTarget(v)} aria-label="Target brightness"/>
-            </Row>
-            <Row label="Shadow clip" value={`${(shadowClip / 10).toFixed(1)} σ`}>
-              <Slider min={0} max={50} value={[shadowClip]} onValueChange={([v]) => setShadowClip(v)} aria-label="Shadow clip"/>
-            </Row>
-            {(kind === 'asinh' || kind === 'log') && (
-              <Row label="Strength" value={String(amount)}>
-                <Slider min={1} max={500} value={[amount]} onValueChange={([v]) => setAmount(v)} aria-label="Stretch strength"/>
-              </Row>
-            )}
-          </section>
+          <CollapsiblePanel id="astro-stretch" title="Stretch">
+            <div className="space-y-2.5">
+              <ChipGroup chips={KINDS.map(k => ({ key: k.key, label: k.label, title: k.desc }))} value={kind} onChange={setKind} />
+              <p className="text-[11px] text-zinc-400 leading-snug">{KINDS.find(k => k.key === kind)?.desc}</p>
+              {(image?.channels.length ?? 0) >= 3 && (
+                <ChipGroup chips={[{ key: 'linked', label: 'Linked', title: 'One transfer for all channels keeps colour.' }, { key: 'unlinked', label: 'Unlinked', title: 'Per-channel transfer. Auto colour balance.' }]}
+                  value={linked ? 'linked' : 'unlinked'} onChange={v => setLinked(v === 'linked')} />
+              )}
+              <Slider label="Target brightness" value={target} min={5} max={60} defaultVal={25} onChange={setTarget} title="Where the median lands, in percent of white."/>
+              <Slider label="Shadow clip (×0.1 σ)" value={shadowClip} min={0} max={50} defaultVal={28} onChange={setShadowClip} title="Black point below the median, in tenths of a sigma."/>
+              {(kind === 'asinh' || kind === 'log') && (
+                <Slider label="Strength" value={amount} min={1} max={500} defaultVal={30} onChange={setAmount}/>
+              )}
+            </div>
+          </CollapsiblePanel>
 
           {image && stats && (
-            <section className="bg-zinc-900 rounded-lg border border-zinc-700/60 p-3 space-y-1 text-[11px] text-zinc-400 tabular-nums">
-              <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-1">Image</h2>
-              <div>{image.width} × {image.height} px, {image.channels.length === 1 ? 'mono' : `${image.channels.length} ch`}</div>
-              {stats.map((st, i) => (
-                <div key={i}>ch{i}: median {fmt(st.median)}, MAD {fmt(st.mad)}, range {fmt(st.min)}–{fmt(st.max)}</div>
-              ))}
-            </section>
+            <CollapsiblePanel id="astro-info" title="Image" defaultOpen={false}>
+              <div className="space-y-1 text-[11px] text-zinc-400 tabular-nums">
+                <div>{image.width} × {image.height} px, {image.channels.length === 1 ? 'mono' : `${image.channels.length} ch`}</div>
+                {stats.map((st, i) => (
+                  <div key={i}>ch{i}: median {fmt(st.median)}, MAD {fmt(st.mad)}, range {fmt(st.min)}–{fmt(st.max)}</div>
+                ))}
+              </div>
+            </CollapsiblePanel>
           )}
         </aside>
 
@@ -193,27 +186,6 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
               </div>}
         </main>
       </div>
-    </div>
-  );
-}
-
-function Check({ label, hint, checked, onChange }: { label: string; hint: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-start gap-2 cursor-pointer" title={hint}>
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="mt-0.5 accent-cyan-400"/>
-      <span className="text-xs text-zinc-300 leading-snug">{label}<span className="block text-[10px] text-zinc-400">{hint}</span></span>
-    </label>
-  );
-}
-
-function Row({ label, value, children }: { label: string; value: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="flex justify-between mb-1.5">
-        <span className="text-xs font-medium text-zinc-300">{label}</span>
-        <span className="text-xs text-zinc-400 tabular-nums">{value}</span>
-      </div>
-      {children}
     </div>
   );
 }

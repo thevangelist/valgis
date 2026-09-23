@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Download, RotateCcw, Eye, EyeOff, Menu, X, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, ChevronLeft, Palette, ChevronDown } from 'lucide-react';
+import { Upload, Download, RotateCcw, Eye, Menu, X, ZoomIn, ZoomOut, Maximize2, RefreshCw, Maximize, ChevronLeft, Palette } from 'lucide-react';
 import heic2any from 'heic2any';
 import UTIF from 'utif';
 import LibRaw from 'libraw-wasm';
@@ -9,9 +9,11 @@ import type { HslBandKey, HslBandAdjustment, HslAdjustments, WheelValue, ColorWh
 import { ColorWheel } from './components/ColorWheel';
 import { HueRangePicker } from './components/HueRangePicker';
 import { Slider as ShadSlider } from '@/components/ui/slider';
+import { Slider } from '@/components/Slider';
+import { CollapsiblePanel } from '@/components/CollapsiblePanel';
+import { ChipGroup } from '@/components/ChipGroup';
 import { Button } from '@/components/ui/button';
 import { StudioModeSwitch } from '@/components/StudioModeSwitch';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -118,55 +120,6 @@ const filterGroups = {
 Object.entries(filterGroups).forEach(([, g]) =>
   Object.entries(g.filters).forEach(([k, f]) => { filterMeta[k] = { ...f, group: g.title }; })
 );
-
-// ─── Collapsible panel ────────────────────────────────────────────────────────
-
-function CollapsiblePanel({
-  id, title, headerExtra, children, defaultOpen = true, enabled, onEnabledChange,
-}: {
-  id: string; title: string; headerExtra?: React.ReactNode;
-  children: React.ReactNode; defaultOpen?: boolean;
-  enabled?: boolean; onEnabledChange?: (v: boolean) => void;
-}) {
-  const storageKey = `valgis.panel.${id}`;
-  const [open, setOpen] = useState(() => {
-    const stored = localStorage.getItem(storageKey);
-    return stored === null ? defaultOpen : stored === '1';
-  });
-  useEffect(() => { localStorage.setItem(storageKey, open ? '1' : '0'); }, [storageKey, open]);
-
-  return (
-    <div className="bg-zinc-900 rounded-lg border border-zinc-700/60 overflow-hidden">
-      <button
-        onClick={() => setOpen(o => !o)}
-        aria-expanded={open}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-zinc-800/50 transition-colors"
-      >
-        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">{title}</span>
-        <div className="flex items-center gap-2">
-          {onEnabledChange !== undefined && (
-            <span
-              role="switch"
-              tabIndex={0}
-              aria-checked={enabled !== false}
-              aria-label={`${title} enabled`}
-              onClick={e => { e.stopPropagation(); onEnabledChange(!enabled); }}
-              onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onEnabledChange(!enabled); } }}
-              className="cursor-pointer rounded"
-            >
-              {enabled !== false
-                ? <Eye size={13} className="text-zinc-300"/>
-                : <EyeOff size={13} className="text-zinc-500"/>}
-            </span>
-          )}
-          {headerExtra}
-          <ChevronDown size={14} className={`text-zinc-500 transition-transform ${open ? '' : '-rotate-90'}`} />
-        </div>
-      </button>
-      {open && <div className={`px-3 pb-3 ${enabled === false ? 'opacity-40 pointer-events-none select-none' : ''}`}>{children}</div>}
-    </div>
-  );
-}
 
 const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void } = {}) => {
   const [filter,           setFilter          ] = useState<FilterName>('none');
@@ -516,63 +469,6 @@ const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void }
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Slider helper
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  type SliderProps = {
-    label: string; value: number; min: number; max: number; defaultVal: number;
-    onChange: (v: number) => void; title?: string; gradient?: string;
-  };
-  const Slider = ({ label, value, min, max, defaultVal, onChange, title, gradient }: SliderProps) => {
-    const [editing, setEditing] = useState(false);
-    const [editVal, setEditVal] = useState('');
-    return (
-      <div>
-        <div className="flex justify-between items-center mb-1.5" title={title}>
-          <span className="text-xs font-medium text-zinc-300">{label}</span>
-          <span className="flex items-center gap-1">
-            {editing ? (
-              <input
-                type="number" value={editVal} autoFocus
-                className="w-12 text-xs text-right bg-zinc-700 text-zinc-200 rounded px-1 outline-none tabular-nums"
-                onChange={e => setEditVal(e.target.value)}
-                onBlur={() => {
-                  const n = parseInt(editVal, 10);
-                  if (!isNaN(n)) onChange(Math.max(min, Math.min(max, n)));
-                  setEditing(false);
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                  if (e.key === 'Escape') setEditing(false);
-                }}
-              />
-            ) : (
-              <button
-                onClick={() => { setEditVal(String(value)); setEditing(true); }}
-                className="text-xs text-zinc-400 hover:text-zinc-200 tabular-nums transition-colors min-w-[2rem] text-right"
-              >
-                {value}
-              </button>
-            )}
-            {value !== defaultVal && !editing && (
-              <button onClick={() => onChange(defaultVal)} className="text-zinc-400 hover:text-zinc-300 transition-colors" title={`Reset to ${defaultVal}`}>
-                <RefreshCw size={10} />
-              </button>
-            )}
-          </span>
-        </div>
-        <ShadSlider
-          min={min} max={max} aria-label={label}
-          value={[value]}
-          onValueChange={(vals) => { const v = Array.isArray(vals) ? vals[0] : vals; onChange(v as number); }}
-          className="w-full"
-          trackGradient={gradient}
-        />
-      </div>
-    );
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -684,20 +580,10 @@ const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void }
                   {Object.entries(filterGroups).map(([gk, group]) => (
                     <div key={gk}>
                       <span className="block text-[11px] text-zinc-400 mb-1">{group.title}</span>
-                      <ToggleGroup
-                        value={[filter]}
-                        onValueChange={(vals) => { if (vals.length) setFilter(vals[vals.length - 1] as FilterName); }}
-                        className="flex flex-wrap gap-1 justify-start w-full"
-                      >
-                        {Object.entries(group.filters).map(([k, f]) => (
-                          <ToggleGroupItem
-                            key={k} value={k} title={f.desc}
-                            className="h-6 px-2 text-xs font-medium rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors"
-                          >
-                            {f.name}
-                          </ToggleGroupItem>
-                        ))}
-                      </ToggleGroup>
+                      <ChipGroup
+                        chips={Object.entries(group.filters).map(([k, f]) => ({ key: k as FilterName, label: f.name, title: f.desc }))}
+                        value={filter} onChange={setFilter}
+                      />
                     </div>
                   ))}
                 </div>
@@ -763,18 +649,10 @@ const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void }
                       trackGradient="linear-gradient(to right, hsl(0,0%,55%) 0%, hsl(220,12%,50%) 100%)"/>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
-                      <ToggleGroup
-                        value={[noiseAlgorithm]}
-                        onValueChange={(vals) => { if (vals.length) setNoiseAlgorithm(vals[vals.length-1] as typeof noiseAlgorithm); }}
-                        className="flex gap-1"
-                      >
-                        {(['median','gaussian','bilateral'] as const).map(m => (
-                          <ToggleGroupItem key={m} value={m}
-                            className="h-5 px-2 text-[11px] font-medium rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors capitalize">
-                            {m}
-                          </ToggleGroupItem>
-                        ))}
-                      </ToggleGroup>
+                      <ChipGroup
+                        chips={(['median','gaussian','bilateral'] as const).map(m => ({ key: m, label: m[0].toUpperCase() + m.slice(1) }))}
+                        value={noiseAlgorithm} onChange={setNoiseAlgorithm} className="flex gap-1"
+                      />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -795,18 +673,10 @@ const Studio = ({ onBack, onMode }: { onBack?: () => void; onMode?: () => void }
                       trackGradient="linear-gradient(to right, hsl(0,0%,35%) 0%, hsl(0,0%,88%) 100%)"/>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[11px] text-zinc-400 shrink-0">Method:</span>
-                      <ToggleGroup
-                        value={[sharpenAlgorithm]}
-                        onValueChange={(vals) => { if (vals.length) setSharpenAlgorithm(vals[vals.length-1] as typeof sharpenAlgorithm); }}
-                        className="flex gap-1"
-                      >
-                        {(['unsharp','highpass','laplacian'] as const).map(m => (
-                          <ToggleGroupItem key={m} value={m}
-                            className="h-5 px-2 text-[11px] font-medium rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white aria-pressed:bg-zinc-600 aria-pressed:border-zinc-500 aria-pressed:text-white transition-colors capitalize">
-                            {m}
-                          </ToggleGroupItem>
-                        ))}
-                      </ToggleGroup>
+                      <ChipGroup
+                        chips={(['unsharp','highpass','laplacian'] as const).map(m => ({ key: m, label: m[0].toUpperCase() + m.slice(1) }))}
+                        value={sharpenAlgorithm} onChange={setSharpenAlgorithm} className="flex gap-1"
+                      />
                     </div>
                   </div>
                 </div>
