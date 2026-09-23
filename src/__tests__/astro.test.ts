@@ -111,3 +111,40 @@ describe('levels', () => {
   it('white point down brightens', () => expect(run({ white: -0.5 })).toBe(128));
   it('gamma 2 lifts midtones', () => expect(run({ gamma: 2 })).toBe(128));
 });
+
+import { binN, removeRowNoise, fixBadColumns, removeHotPixels } from '../lib/astroTools';
+
+describe('sensor corrections', () => {
+  const W = 40, H = 40;
+  const flat = (v: number) => { const p = new Float32Array(W * H); for (let i = 0; i < p.length; i++) p[i] = v + ((i * 7919) % 5) - 2; return p; };
+
+  it('binN 4 quarters the size', () => {
+    const r = binN([flat(10)], W, H, 4);
+    expect([r.width, r.height]).toEqual([10, 10]);
+  });
+  it('removeRowNoise flattens a row offset and keeps a star', () => {
+    const p = flat(100);
+    for (let x = 0; x < W; x++) p[7 * W + x] += 6;
+    p[20 * W + 20] = 5000;
+    const out = removeRowNoise(p, W, H);
+    const rowMean = (y: number) => Array.from(out.subarray(y * W, y * W + W)).reduce((a, v) => a + v, 0) / W;
+    expect(Math.abs(rowMean(7) - rowMean(8))).toBeLessThan(1.5);
+    expect(out[20 * W + 20]).toBeGreaterThan(4000);
+  });
+  it('fixBadColumns finds and repairs a dead column', () => {
+    const p = flat(100);
+    for (let y = 0; y < H; y++) p[y * W + 13] = 40;
+    const { plane, columns } = fixBadColumns(p, W, H);
+    expect(columns).toContain(13);
+    expect(Math.abs(plane[5 * W + 13] - 100)).toBeLessThan(4);
+  });
+  it('removeHotPixels replaces a spike but not a 3x3 star', () => {
+    const p = flat(100);
+    p[10 * W + 10] = 900;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) p[(30 + dy) * W + 30 + dx] = 900;
+    const { plane, count } = removeHotPixels(p, W, H);
+    expect(count).toBe(1);
+    expect(plane[10 * W + 10]).toBeLessThan(110);
+    expect(plane[30 * W + 30]).toBe(900);
+  });
+});

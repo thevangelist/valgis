@@ -18,10 +18,10 @@ import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { channelStats, autoStf, applyStretch, NEUTRAL_LEVELS } from './lib/stretch';
 import type { Levels } from './lib/stretch';
 import { SectionRule } from '@/components/panels/AdjustmentPanels';
-import { bin2x2, subtractBackground, neutralizeBackground, scnr } from './lib/astroTools';
+import { binN, removeRowNoise, fixBadColumns, removeHotPixels, subtractBackground, neutralizeBackground, scnr } from './lib/astroTools';
 import type { StretchKind, StfParams } from './lib/stretch';
 
-type LinearTool = 'bin' | 'background' | 'neutralize' | 'scnr';
+type LinearTool = 'bin2' | 'bin4' | 'rows' | 'columns' | 'hot' | 'background' | 'neutralize' | 'scnr';
 
 interface FloatImage { width: number; height: number; channels: Float32Array[]; name: string; }
 
@@ -84,7 +84,11 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
     if (!image) return null;
     let { width, height, channels } = image;
     const on = (t: LinearTool) => tools.includes(t);
-    if (on('bin')) ({ planes: channels, width, height } = bin2x2(channels, width, height));
+    if (on('bin4')) ({ planes: channels, width, height } = binN(channels, width, height, 4));
+    else if (on('bin2')) ({ planes: channels, width, height } = binN(channels, width, height, 2));
+    if (on('hot')) channels = channels.map(c => removeHotPixels(c, width, height).plane);
+    if (on('columns')) channels = channels.map(c => fixBadColumns(c, width, height).plane);
+    if (on('rows')) channels = channels.map(c => removeRowNoise(c, width, height));
     if (on('background')) channels = channels.map(c => subtractBackground(c, width, height));
     if (on('neutralize')) channels = neutralizeBackground(channels);
     if (on('scnr')) channels = scnr(channels);
@@ -173,7 +177,11 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
       <CollapsiblePanel id="astro-linear" title="Linear">
         <ChipGroup<LinearTool> multiple
           chips={[
-            { key: 'bin' as const, label: '2×2 bin', title: 'Sum neighbours. SNR ×2, resolution ÷2.' },
+            { key: 'bin2' as const, label: 'Bin 2', title: 'Sum 2×2 neighbours. SNR ×2, resolution ÷2.' },
+            { key: 'bin4' as const, label: 'Bin 4', title: 'Sum 4×4 neighbours. SNR ×4, resolution ÷4. For read-noise limited frames.' },
+            { key: 'hot' as const, label: 'Hot pixels', title: 'Isolated spikes above 8 σ replaced by the neighbourhood median. Stars are untouched.' },
+            { key: 'columns' as const, label: 'Bad columns', title: 'Columns whose sky level deviates from their neighbours are interpolated.' },
+            { key: 'rows' as const, label: 'Row noise', title: 'Subtract each row\'s sky median. Removes readout banding.' },
             { key: 'background' as const, label: 'Background', title: 'Fit a surface to the sky and subtract it. Removes vignetting and gradients.' },
             ...((image?.channels.length ?? 0) >= 3 ? [
               { key: 'neutralize' as const, label: 'Neutralize', title: 'Match channel medians. Removes sky colour cast.' },
@@ -192,6 +200,12 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
             <ChipGroup chips={[{ key: 'linked', label: 'Linked', title: 'One transfer for all channels keeps colour.' }, { key: 'unlinked', label: 'Unlinked', title: 'Per-channel transfer. Auto colour balance.' }]}
               value={linked ? 'linked' : 'unlinked'} onChange={v => setLinked(v === 'linked')} />
           )}
+          <ChipGroup chips={[
+              { key: 'gentle', label: 'Gentle', title: 'Median at 15 %, clip 3 σ. Bright targets.' },
+              { key: 'normal', label: 'Normal', title: 'Median at 25 %, clip 2.8 σ.' },
+              { key: 'hard',   label: 'Hard',   title: 'Median at 40 %, clip 1.5 σ. Faint, read-noise limited frames.' },
+            ]} value={target === 15 && shadowClip === 30 ? 'gentle' : target === 40 && shadowClip === 15 ? 'hard' : target === 25 && shadowClip === 28 ? 'normal' : 'custom' as 'gentle'}
+            onChange={k => { if (k === 'gentle') { setTarget(15); setShadowClip(30); } else if (k === 'hard') { setTarget(40); setShadowClip(15); } else { setTarget(25); setShadowClip(28); } }} />
           <Slider label="Target brightness" value={target} min={5} max={60} defaultVal={25} onChange={setTarget} title="Where the median lands, in percent of white."/>
           <Slider label="Shadow clip (×0.1 σ)" value={shadowClip} min={0} max={50} defaultVal={28} onChange={setShadowClip} title="Black point below the median, in tenths of a sigma."/>
           {(kind === 'asinh' || kind === 'log') && (
