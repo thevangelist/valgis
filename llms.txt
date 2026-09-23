@@ -1,0 +1,36 @@
+# Valgis
+
+> Live decorrelation stretch camera and spectral photo editor for rock art fieldwork — runs entirely in the browser.
+
+Valgis is an open-source browser tool for archaeologists recording rock art. It provides two tools in one workflow: a live camera that applies decorrelation stretch in real time on mobile, and a full desktop photo editor for post-processing DSLR, TIFF, HEIC, and RAW images with spectral filters and standard photo adjustments.
+
+## What it does
+
+Decorrelation stretch is a PCA-based algorithm originally developed for satellite multispectral imaging. Valgis applies it to field photography to reveal faint pigments, engravings, and surface features invisible to the naked eye or standard photography.
+
+## Tools
+
+- **Field Camera**: Open on a phone, point at a rock panel. Decorrelated image updates live. Tap to capture a full-resolution PNG.
+- **Desktop Studio**: Load TIFF, HEIC, RAW, or JPEG. Apply spectral filters, then refine with shadow/highlight recovery, dehaze, clarity, noise reduction, and sharpening.
+
+## Filters
+
+- YRE, YRD, YDT, YBK, YYE, YWE — YCbCr-space decorrelation stretch variants
+- LRE, LBK, LAB — LAB-space variants
+- CRGB, RGB0 — RGB-space variants
+- LAB 2, Spectral RGB, Spectral YUV — additional spectral variants
+- Auto Level, Hist EQ, Sat Boost — enhancement tools
+- **Adaptive** — a custom filter unique to Valgis; samples the image locally and suppresses lichen, shadow, and surface variation that would otherwise dominate the stretch
+
+## Technical
+
+- Runs entirely in the browser using WebAssembly and Web Workers
+- PCA computed per-frame with temporal EMA smoothing for live camera stability
+- Built with React, Vite, Tailwind CSS, and ml-matrix
+- No server, no upload, no account required
+- MIT license
+
+## Links
+
+- App: https://thevangelist.github.io/valgis/
+- Source: https://github.com/thevangelist/valgis
