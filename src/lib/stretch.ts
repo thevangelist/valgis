@@ -3,15 +3,17 @@
 export interface Stats { median: number; mad: number; min: number; max: number; }
 
 export function channelStats(data: Float32Array, maxSamples = 200_000): Stats {
+  // Median and MAD from a stride sample; min and max over every pixel, so a single bright
+  // planet or star is not missed by the sample.
   const step = Math.max(1, Math.floor(data.length / maxSamples));
   const s: number[] = [];
   let min = Infinity, max = -Infinity;
-  for (let i = 0; i < data.length; i += step) {
+  for (let i = 0; i < data.length; i++) {
     const v = data[i];
     if (!Number.isFinite(v)) continue;
-    s.push(v);
     if (v < min) min = v;
     if (v > max) max = v;
+    if (i % step === 0) s.push(v);
   }
   s.sort((a, b) => a - b);
   const median = s[s.length >> 1] ?? 0;
