@@ -488,7 +488,7 @@ export default function Astro({ onBack, onMode }: { onBack: () => void; onMode: 
     <StudioShell header={header} sidebar={sidebar} sidebarOpen={sidebarOpen} onSidebarClose={() => setSidebarOpen(false)}
       overlay={busy && <LoadingOverlay message={busy}/>}>
       {processed && (
-        <InfoBar left={`${processed.width} × ${processed.height} px · ${processed.channels.length === 1 ? 'mono' : `${processed.channels.length} ch`}`}
+        <InfoBar left={<>{`${processed.width} × ${processed.height} px · ${processed.channels.length === 1 ? 'mono' : `${processed.channels.length} ch`}`}{image?.header?.TRUNCATD && <span className="ml-2 text-destructive">truncated file, {image.header.TRUNCATD}</span>}</>}
           right={<><span ref={readoutRef} className="tabular-nums whitespace-pre"/><span className="text-foreground font-medium">{KINDS.find(k => k.key === kind)?.label}</span></>}/>
       )}
       <div ref={viewportRef} className={`flex-1 flex items-center justify-center p-4 overflow-hidden select-none ${cropping ? 'cursor-crosshair' : zoom > 1 ? 'cursor-grab' : 'cursor-default'}`}

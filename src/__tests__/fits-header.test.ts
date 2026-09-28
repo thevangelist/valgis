@@ -36,10 +36,11 @@ describe('FITS header parsing', () => {
     const img = parseFits(fitsWith(many, data));
     expect(Array.from(img.channels[0])).toEqual([1, 2, 3, 4]);
   });
-  it('throws on missing END and on truncated data', () => {
+  it('throws on missing END, opens truncated data with a TRUNCATD flag', () => {
     expect(() => parseFits(new ArrayBuffer(2880))).toThrow(/END/);
-    const short = fitsWith(['NAXIS1  =                 4000', 'NAXIS2  =                 4000']);
-    expect(() => parseFits(short)).toThrow(/shorter/);
+    const short = parseFits(fitsWith(['NAXIS1  =                 4000', 'NAXIS2  =                 4000']));
+    expect(short.header.TRUNCATD).toMatch(/0% of pixels present/);
+    expect(Number.isNaN(short.channels[0][0])).toBe(true);
   });
   it('rejects unknown BITPIX', () => {
     expect(() => parseFits(fitsWith(['BITPIX  =                   64']))).toThrow(/BITPIX/);

@@ -53,7 +53,10 @@ export function parseFits(buf: ArrayBuffer): FitsImage {
   const n = width * height;
   const view = new DataView(buf, dataOffset);
   const bytesPer = Math.abs(bitpix) / 8;
-  if (view.byteLength < n * planes * bytesPer) throw new Error('FITS: data shorter than header claims');
+  // A truncated download still opens: the missing tail becomes NaN and the header says so.
+  const have = Math.floor(view.byteLength / bytesPer), want = n * planes;
+  if (have < 1) throw new Error('FITS: no image data');
+  if (have < want) header.TRUNCATD = `${Math.round(100 * have / want)}% of pixels present`;
 
   const read: (i: number) => number =
     bitpix === 8   ? i => view.getUint8(i)
@@ -71,7 +74,7 @@ export function parseFits(buf: ArrayBuffer): FitsImage {
     for (let y = 0; y < height; y++) {
       const srcRow = (height - 1 - y) * width;
       const dstRow = y * width;
-      for (let x = 0; x < width; x++) plane[dstRow + x] = read(base + srcRow + x) * bscale + bzero;
+      for (let x = 0; x < width; x++) { const i = base + srcRow + x; plane[dstRow + x] = i < have ? read(i) * bscale + bzero : NaN; }
     }
     channels.push(plane);
   }

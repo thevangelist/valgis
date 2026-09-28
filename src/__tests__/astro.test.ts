@@ -34,6 +34,14 @@ describe('parseFits', () => {
     const img = parseFits(makeFits(3, 1, -32, [0.5, 1.5, 2.5]));
     expect(Array.from(img.channels[0])).toEqual([0.5, 1.5, 2.5]);
   });
+  it('opens a truncated file, fills the missing tail with NaN and flags it', () => {
+    const full = makeFits(4, 4, -32, Array.from({ length: 16 }, (_, i) => i));
+    const cut = full.slice(0, full.byteLength - 2880 + 6 * 4);   // header + 6 of 16 pixels
+    const img = parseFits(cut);
+    expect(img.header.TRUNCATD).toBe('38% of pixels present');
+    expect(Number.isNaN(img.channels[0][0])).toBe(true);        // top row (last in file) is missing
+    expect(img.channels[0][15]).toBe(3);                         // bottom row (first in file) is there
+  });
   it('rejects unsupported NAXIS', () => {
     expect(() => parseFits(makeFits(1, 1, 8, [1], ['NAXIS   =                    1']))).toThrow();
   });
